@@ -31,6 +31,12 @@ typedef long      mp_off_t;
 /* Stack overflow checking */
 #define MICROPY_STACKCHECK              (1)
 
+/* GC register scanning: use setjmp fallback on Xtensa (not natively supported) */
+#define MICROPY_GCREGS_SETJMP           (1)
+
+/* Use setjmp-based NLR instead of Xtensa asm (avoids linker relocation issues) */
+#define MICROPY_NLR_SETJMP              (1)
+
 /* ---- Enabled modules ---- */
 #define MICROPY_PY_MATH                 (1)
 #define MICROPY_PY_CMATH                (0)

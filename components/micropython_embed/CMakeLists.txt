@@ -7,10 +7,11 @@
 
 set(MP_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
 
-if(EXISTS "${MP_GENERATED_DIR}/micropython_embed.c")
+if(EXISTS "${MP_GENERATED_DIR}/port/micropython_embed.h")
+    file(GLOB_RECURSE MP_SRCS "${MP_GENERATED_DIR}/*.c")
     idf_component_register(
-        SRCS "${MP_GENERATED_DIR}/micropython_embed.c"
-        INCLUDE_DIRS "${MP_GENERATED_DIR}" "port"
+        SRCS ${MP_SRCS}
+        INCLUDE_DIRS "${MP_GENERATED_DIR}" "${MP_GENERATED_DIR}/port" "port"
     )
     # Suppress warnings in generated MicroPython code
     target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-all -Wno-extra)

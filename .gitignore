@@ -13,7 +13,7 @@ managed_components/
 # Custom components — track structure, ignore generated files
 components/*
 !components/micropython_embed/
-components/micropython_embed/generated/micropython_embed.*
+components/micropython_embed/generated/
 
 # MicroPython submodule build artifacts
 lib/micropython/

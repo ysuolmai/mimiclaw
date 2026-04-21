@@ -24,6 +24,7 @@ MimiClaw turns a tiny ESP32-S3 board into a personal AI assistant. Plug it into 
 - **Tiny** — No Linux, no Node.js, no bloat — just pure C
 - **Handy** — Message it from Telegram, it handles the rest
 - **Loyal** — Learns from memory, remembers across reboots
+- **Smart** — Embedded MicroPython VM lets the AI write and run code on the chip
 - **Energetic** — USB power, 0.5 W, runs 24/7
 - **Lovable** — One ESP32-S3 board, $5, nothing else
 
@@ -256,11 +257,28 @@ MimiClaw supports tool calling for both Anthropic and OpenAI — the LLM can cal
 |------|-------------|
 | `web_search` | Search the web via Tavily (preferred) or Brave for current information |
 | `get_current_time` | Fetch current date/time via HTTP and set the system clock |
+| `run_python` | Execute Python code in an embedded MicroPython VM (math, json, regex, collections, and more) |
 | `cron_add` | Schedule a recurring or one-shot task (the LLM creates cron jobs on its own) |
 | `cron_list` | List all scheduled cron jobs |
 | `cron_remove` | Remove a cron job by ID |
 
 To enable web search, set a [Tavily API key](https://app.tavily.com/home) via `MIMI_SECRET_TAVILY_KEY` (preferred), or a [Brave Search API key](https://brave.com/search/api/) via `MIMI_SECRET_SEARCH_KEY` in `mimi_secrets.h`.
+
+### MicroPython VM
+
+MimiClaw embeds a sandboxed [MicroPython](https://micropython.org/) interpreter that the AI can use via the `run_python` tool. This lets the agent write and execute Python code on the fly — for calculations, data transformations, text processing, and anything else that's unreliable via pure LLM reasoning.
+
+- **Available modules:** math, json, re, collections, struct, binascii, random, heapq
+- **Sandboxed:** no network, no filesystem, no hardware access — safe to run untrusted code
+- **Resource-light:** 512 KB PSRAM allocated per execution, freed immediately after
+- **Timeout-protected:** default 10 s, max 30 s — infinite loops are killed automatically
+
+The MicroPython VM requires a one-time setup step before building:
+
+```bash
+./scripts/build_micropython_embed.sh   # generates the MicroPython embed files
+idf.py build                           # then build as usual
+```
 
 ## Cron Tasks
 
@@ -284,6 +302,8 @@ This turns MimiClaw into a proactive assistant — write tasks to `HEARTBEAT.md`
 - **Cron scheduler** — the AI can schedule its own recurring and one-shot tasks, persisted across reboots
 - **Heartbeat** — periodically checks a task file and prompts the AI to act autonomously
 - **Tool use** — ReAct agent loop with tool calling for both providers
+- **MicroPython VM** — embedded Python interpreter for on-device code execution by the AI
+- **Skill creator** — the AI can create new skills as Markdown files, including Python-powered ones
 
 ## For Developers
 

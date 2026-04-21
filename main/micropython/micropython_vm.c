@@ -2,12 +2,17 @@
 #include "mimi_config.h"
 
 #include <string.h>
+#include <errno.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 
+#include "py/runtime.h"
+#include "py/builtin.h"
+#include "py/lexer.h"
+#include "py/mphal.h"
 #include "micropython_embed.h"
 
 static const char *TAG = "upy_vm";
@@ -26,9 +31,9 @@ volatile int micropython_vm_timeout_flag = 0;
 /* ---------- MicroPython HAL implementations ---------- */
 
 /* Called by MicroPython for all print() / stdout output */
-void mp_hal_stdout_tx_strn(const char *str, mp_uint_t len)
+mp_uint_t mp_hal_stdout_tx_strn(const char *str, size_t len)
 {
-    if (!s_stdout_buf) return;
+    if (!s_stdout_buf) return 0;
     size_t avail = (s_stdout_size > s_stdout_pos + 1)
                    ? s_stdout_size - s_stdout_pos - 1
                    : 0;
@@ -38,6 +43,7 @@ void mp_hal_stdout_tx_strn(const char *str, mp_uint_t len)
         s_stdout_pos += copy;
         s_stdout_buf[s_stdout_pos] = '\0';
     }
+    return len;
 }
 
 /* Called by MicroPython for time.sleep_ms() / delays */
@@ -45,6 +51,27 @@ void mp_hal_delay_ms(mp_uint_t ms)
 {
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
+
+/* ---------- Stubs for disabled filesystem/import features ---------- */
+
+/* Import stat — always report "not found" since we have no filesystem imports */
+mp_import_stat_t mp_import_stat(const char *path)
+{
+    return MP_IMPORT_STAT_NO_EXIST;
+}
+
+/* Lexer from file — not supported, raise error */
+mp_lexer_t *mp_lexer_new_from_file(qstr filename)
+{
+    mp_raise_OSError(ENOENT);
+}
+
+/* Built-in open() — disabled */
+mp_obj_t mp_builtin_open(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs)
+{
+    mp_raise_OSError(EPERM);
+}
+MP_DEFINE_CONST_FUN_OBJ_KW(mp_builtin_open_obj, 1, mp_builtin_open);
 
 /* ---------- Timeout timer ---------- */
 
@@ -109,8 +136,9 @@ esp_err_t micropython_vm_exec(const char *code, char *output, size_t output_size
     /* Reset timeout flag */
     micropython_vm_timeout_flag = 0;
 
-    /* Init interpreter */
-    mp_embed_init(gc_heap, MIMI_MICROPYTHON_HEAP_SIZE);
+    /* Init interpreter — stack_top is the current stack pointer */
+    volatile int stack_var;
+    mp_embed_init(gc_heap, MIMI_MICROPYTHON_HEAP_SIZE, (void *)&stack_var);
 
     /* Start timeout timer */
     if (timeout_ms > 0) {
