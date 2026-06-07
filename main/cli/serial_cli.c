@@ -9,6 +9,7 @@
 #include "proxy/http_proxy.h"
 #include "tools/tool_registry.h"
 #include "tools/tool_web_search.h"
+#include "tools/tool_system.h"
 #include "cron/cron_service.h"
 #include "heartbeat/heartbeat.h"
 #include "skills/skill_loader.h"
@@ -245,6 +246,24 @@ static int cmd_heap_info(int argc, char **argv)
     printf("Total free:    %d bytes\n",
            (int)esp_get_free_heap_size());
     return 0;
+}
+
+/* --- system_status command --- */
+static int cmd_system_status(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    char *output = calloc(1, 2048);
+    if (!output) {
+        printf("Out of memory.\n");
+        return 1;
+    }
+
+    esp_err_t err = tool_system_status_execute("{}", output, 2048);
+    printf("%s\n", output[0] ? output : "(empty)");
+    free(output);
+    return (err == ESP_OK) ? 0 : 1;
 }
 
 /* --- set_proxy command --- */
@@ -972,6 +991,14 @@ esp_err_t serial_cli_init(void)
         .func = &cmd_heap_info,
     };
     esp_console_cmd_register(&heap_cmd);
+
+    /* system_status */
+    esp_console_cmd_t system_status_cmd = {
+        .command = "system_status",
+        .help = "Show device diagnostics: uptime, build, WiFi, heap/PSRAM, flash, SPIFFS",
+        .func = &cmd_system_status,
+    };
+    esp_console_cmd_register(&system_status_cmd);
 
     /* set_search_key */
     search_key_args.key = arg_str1(NULL, NULL, "<key>", "Brave Search API key");

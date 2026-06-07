@@ -16,6 +16,12 @@ esp_err_t tool_read_file_execute(const char *input_json, char *output, size_t ou
 esp_err_t tool_write_file_execute(const char *input_json, char *output, size_t output_size);
 
 /**
+ * Append content to a file on SPIFFS, creating it if needed.
+ * Input JSON: {"path": "<MIMI_SPIFFS_BASE>/...", "content": "..."}
+ */
+esp_err_t tool_append_file_execute(const char *input_json, char *output, size_t output_size);
+
+/**
  * Find-and-replace edit a file on SPIFFS.
  * Input JSON: {"path": "<MIMI_SPIFFS_BASE>/...", "old_string": "...", "new_string": "..."}
  */

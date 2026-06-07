@@ -113,6 +113,53 @@ esp_err_t tool_write_file_execute(const char *input_json, char *output, size_t o
     return ESP_OK;
 }
 
+/* ── append_file ───────────────────────────────────────────── */
+
+esp_err_t tool_append_file_execute(const char *input_json, char *output, size_t output_size)
+{
+    cJSON *root = cJSON_Parse(input_json);
+    if (!root) {
+        snprintf(output, output_size, "Error: invalid JSON input");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(root, "path"));
+    const char *content = cJSON_GetStringValue(cJSON_GetObjectItem(root, "content"));
+
+    if (!validate_path(path)) {
+        snprintf(output, output_size, "Error: path must start with %s/ and must not contain '..'", MIMI_SPIFFS_BASE);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!content) {
+        snprintf(output, output_size, "Error: missing 'content' field");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *f = fopen(path, "a");
+    if (!f) {
+        snprintf(output, output_size, "Error: cannot open file for appending: %s", path);
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    size_t len = strlen(content);
+    size_t written = fwrite(content, 1, len, f);
+    fclose(f);
+
+    if (written != len) {
+        snprintf(output, output_size, "Error: appended %d of %d bytes to %s", (int)written, (int)len, path);
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    snprintf(output, output_size, "OK: appended %d bytes to %s", (int)written, path);
+    ESP_LOGI(TAG, "append_file: %s (%d bytes)", path, (int)written);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
 /* ── edit_file ─────────────────────────────────────────────── */
 
 esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t output_size)

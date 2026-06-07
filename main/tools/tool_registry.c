@@ -5,6 +5,7 @@
 #include "tools/tool_files.h"
 #include "tools/tool_cron.h"
 #include "tools/tool_gpio.h"
+#include "tools/tool_system.h"
 
 #include <string.h>
 #include "esp_log.h"
@@ -106,6 +107,19 @@ esp_err_t tool_registry_init(void)
         .execute = tool_write_file_execute,
     };
     register_tool(&wf);
+
+    /* Register append_file */
+    mimi_tool_t af = {
+        .name = "append_file",
+        .description = "Append content to a SPIFFS file, creating it if needed. Path must start with " MIMI_SPIFFS_BASE "/.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Absolute path starting with " MIMI_SPIFFS_BASE "/\"},"
+            "\"content\":{\"type\":\"string\",\"description\":\"Content to append\"}},"
+            "\"required\":[\"path\",\"content\"]}",
+        .execute = tool_append_file_execute,
+    };
+    register_tool(&af);
 
     /* Register edit_file */
     mimi_tool_t ef = {
@@ -213,6 +227,18 @@ esp_err_t tool_registry_init(void)
         .execute = tool_gpio_read_all_execute,
     };
     register_tool(&ga);
+
+    /* Register system_status */
+    mimi_tool_t ss = {
+        .name = "system_status",
+        .description = "Get device diagnostics: uptime, build info, reset reason, WiFi, heap/PSRAM, flash, and SPIFFS usage.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{},"
+            "\"required\":[]}",
+        .execute = tool_system_status_execute,
+    };
+    register_tool(&ss);
 
     build_tools_json();
 
