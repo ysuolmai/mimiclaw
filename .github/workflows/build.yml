@@ -29,6 +29,8 @@ jobs:
         shell: bash
         run: |
           . "$IDF_PATH/export.sh"
+          # Match xiaozhi-esp32s3-supermini packaging: merged firmware contains
+          # only bootloader, partition table, and app. Storage/SPIFFS stays separate.
           esptool.py --chip esp32s3 merge_bin \
             --flash_mode dio \
             --flash_freq 80m \
@@ -36,8 +38,7 @@ jobs:
             -o build/mimiclaw-esp32-s3-supermini-merged.bin \
             0x0      build/bootloader/bootloader.bin \
             0x8000   build/partition_table/partition-table.bin \
-            0x20000  build/mimiclaw.bin \
-            0x340000 build/spiffs.bin
+            0x20000  build/mimiclaw.bin
 
       - name: Show image sizes
         if: always()

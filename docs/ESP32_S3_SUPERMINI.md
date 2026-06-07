@@ -29,8 +29,16 @@ idf.py build
 
 ## Flash Merged Firmware
 
-The GitHub Actions build uploads `mimiclaw-esp32-s3-supermini-merged.bin`, which includes the bootloader, partition table, app, and SPIFFS image.
+The GitHub Actions build uploads `mimiclaw-esp32-s3-supermini-merged.bin`, which follows the `ysuolmai/xiaozhi-esp32s3-supermini` packaging style: it includes the bootloader, partition table, and app, but does not include SPIFFS/storage.
 
 ```bash
 esptool.py --chip esp32s3 -b 460800 write_flash 0x0 mimiclaw-esp32-s3-supermini-merged.bin
+```
+
+## Flash Storage Separately
+
+The same artifact also includes `spiffs.bin`. Flash it only when you want to initialize or reset the SPIFFS partition:
+
+```bash
+esptool.py --chip esp32s3 -b 460800 write_flash 0x340000 spiffs.bin
 ```
