@@ -4,6 +4,8 @@
 #include "proxy/http_proxy.h"
 #include "memory/memory_store.h"
 #include "memory/session_mgr.h"
+#include "heartbeat/heartbeat.h"
+#include "tools/tool_registry.h"
 #include "tools/tool_system.h"
 
 #include <ctype.h>
@@ -315,6 +317,76 @@ static bool telegram_command_matches(const char *text, const char *cmd, const ch
     return true;
 }
 
+static const char *telegram_read_token(const char *text, char *out, size_t out_size)
+{
+    if (!text || !out || out_size == 0) {
+        return text;
+    }
+
+    while (*text && isspace((unsigned char)*text)) {
+        text++;
+    }
+
+    size_t n = 0;
+    while (*text && !isspace((unsigned char)*text)) {
+        if (n + 1 < out_size) {
+            out[n++] = *text;
+        }
+        text++;
+    }
+    out[n] = '\0';
+
+    while (*text && isspace((unsigned char)*text)) {
+        text++;
+    }
+    return text;
+}
+
+static void telegram_send_tool_result(const char *chat_id, const char *tool_name,
+                                      const char *input_json, size_t output_size)
+{
+    char *output = calloc(1, output_size);
+    if (!output) {
+        telegram_send_message(chat_id, "Out of memory while running command.");
+        return;
+    }
+
+    esp_err_t err = tool_registry_execute(tool_name, input_json ? input_json : "{}", output, output_size);
+    if (err != ESP_OK && output[0] == '\0') {
+        snprintf(output, output_size, "%s failed: %s", tool_name, esp_err_to_name(err));
+    }
+
+    telegram_send_message(chat_id, output[0] ? output : "(empty result)");
+    free(output);
+}
+
+static char *json_with_string_field(const char *key, const char *value)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return NULL;
+    }
+    cJSON_AddStringToObject(obj, key, value ? value : "");
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
+
+static char *json_tail_request(const char *path, int max_bytes)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return NULL;
+    }
+    cJSON_AddStringToObject(obj, "path", path);
+    if (max_bytes > 0) {
+        cJSON_AddNumberToObject(obj, "max_bytes", max_bytes);
+    }
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
+
 static void telegram_send_help(const char *chat_id)
 {
     telegram_send_message(chat_id,
@@ -322,8 +394,14 @@ static void telegram_send_help(const char *chat_id)
         "/help - show this help\n"
         "/id - show this chat id\n"
         "/status - show device status\n"
+        "/tasks - list scheduled tasks\n"
+        "/remove_task <id> - remove a scheduled task\n"
         "/memory - show long-term memory\n"
+        "/today - show today's daily memory\n"
         "/remember <note> - append a daily memory note\n"
+        "/files [prefix] - list SPIFFS files\n"
+        "/tail <path> [bytes] - show the end of a SPIFFS file\n"
+        "/heartbeat - run heartbeat check now\n"
         "/forget - clear this chat session\n\n"
         "Send any normal message to chat with the AI agent.");
 }
@@ -361,6 +439,29 @@ static bool handle_builtin_command(const char *chat_id, const char *text)
         return true;
     }
 
+    if (telegram_command_matches(text, "/tasks", &args)) {
+        telegram_send_tool_result(chat_id, "cron_list", "{}", 4096);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/remove_task", &args)) {
+        char job_id[16];
+        telegram_read_token(args, job_id, sizeof(job_id));
+        if (job_id[0] == '\0') {
+            telegram_send_message(chat_id, "Usage: /remove_task <job_id>");
+            return true;
+        }
+
+        char *json = json_with_string_field("job_id", job_id);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "cron_remove", json, 512);
+        free(json);
+        return true;
+    }
+
     if (telegram_command_matches(text, "/memory", &args)) {
         char *mem = calloc(1, 4096);
         if (!mem) {
@@ -386,6 +487,23 @@ static bool handle_builtin_command(const char *chat_id, const char *text)
         return true;
     }
 
+    if (telegram_command_matches(text, "/today", &args)) {
+        char *recent = calloc(1, 4096);
+        if (!recent) {
+            telegram_send_message(chat_id, "Out of memory while reading today's memory.");
+            return true;
+        }
+
+        if (memory_read_recent(recent, 4096, 1) == ESP_OK && recent[0]) {
+            telegram_send_message(chat_id, recent);
+        } else {
+            telegram_send_message(chat_id, "No daily memory found for today.");
+        }
+
+        free(recent);
+        return true;
+    }
+
     if (telegram_command_matches(text, "/remember", &args)) {
         if (!args || args[0] == '\0') {
             telegram_send_message(chat_id, "Usage: /remember <note>");
@@ -399,6 +517,57 @@ static bool handle_builtin_command(const char *chat_id, const char *text)
             char reply[96];
             snprintf(reply, sizeof(reply), "Failed to save memory: %s", esp_err_to_name(err));
             telegram_send_message(chat_id, reply);
+        }
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/files", &args)) {
+        if (!args || args[0] == '\0') {
+            telegram_send_tool_result(chat_id, "list_dir", "{}", 4096);
+            return true;
+        }
+
+        char *json = json_with_string_field("prefix", args);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "list_dir", json, 4096);
+        free(json);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/tail", &args)) {
+        char path[160];
+        const char *rest = telegram_read_token(args, path, sizeof(path));
+        if (path[0] == '\0') {
+            telegram_send_message(chat_id, "Usage: /tail <path> [bytes]");
+            return true;
+        }
+
+        int max_bytes = 2048;
+        if (rest && rest[0]) {
+            int requested = atoi(rest);
+            if (requested > 0) {
+                max_bytes = requested;
+            }
+        }
+
+        char *json = json_tail_request(path, max_bytes);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "tail_file", json, 4096);
+        free(json);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/heartbeat", &args)) {
+        if (heartbeat_trigger()) {
+            telegram_send_message(chat_id, "Heartbeat found actionable tasks and prompted the agent.");
+        } else {
+            telegram_send_message(chat_id, "Heartbeat found no actionable tasks.");
         }
         return true;
     }

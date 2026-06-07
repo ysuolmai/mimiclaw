@@ -2,8 +2,14 @@
 #include "onboard_html.h"
 #include "mimi_config.h"
 #include "wifi/wifi_manager.h"
+#include "heartbeat/heartbeat.h"
+#include "memory/memory_store.h"
+#include "tools/tool_registry.h"
 
+#include <ctype.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
@@ -22,6 +28,167 @@
 static const char *TAG = "onboard";
 static httpd_handle_t s_server = NULL;
 static bool s_captive_mode = false;
+
+static int hex_value(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static void url_decode_in_place(char *s)
+{
+    if (!s) return;
+
+    char *src = s;
+    char *dst = s;
+    while (*src) {
+        if (*src == '%' && isxdigit((unsigned char)src[1]) && isxdigit((unsigned char)src[2])) {
+            int hi = hex_value(src[1]);
+            int lo = hex_value(src[2]);
+            *dst++ = (char)((hi << 4) | lo);
+            src += 3;
+        } else if (*src == '+') {
+            *dst++ = ' ';
+            src++;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+}
+
+static bool http_get_query_value(httpd_req_t *req, const char *key, char *out, size_t out_size)
+{
+    if (!req || !key || !out || out_size == 0) return false;
+    out[0] = '\0';
+
+    size_t query_len = httpd_req_get_url_query_len(req);
+    if (query_len == 0) return false;
+
+    char *query = calloc(1, query_len + 1);
+    if (!query) return false;
+
+    bool found = false;
+    if (httpd_req_get_url_query_str(req, query, query_len + 1) == ESP_OK &&
+        httpd_query_key_value(query, key, out, out_size) == ESP_OK) {
+        url_decode_in_place(out);
+        found = true;
+    }
+
+    free(query);
+    return found;
+}
+
+static char *http_read_body(httpd_req_t *req, int max_len)
+{
+    int total_len = req->content_len;
+    if (total_len <= 0 || total_len > max_len) {
+        return NULL;
+    }
+
+    char *buf = calloc(1, total_len + 1);
+    if (!buf) {
+        return NULL;
+    }
+
+    int received = 0;
+    while (received < total_len) {
+        int ret = httpd_req_recv(req, buf + received, total_len - received);
+        if (ret <= 0) {
+            free(buf);
+            return NULL;
+        }
+        received += ret;
+    }
+
+    buf[total_len] = '\0';
+    return buf;
+}
+
+static esp_err_t http_send_json_object(httpd_req_t *req, cJSON *root)
+{
+    char *json = cJSON_PrintUnformatted(root);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    esp_err_t ret = httpd_resp_send(req, json, strlen(json));
+    free(json);
+    return ret;
+}
+
+static esp_err_t http_send_text_result(httpd_req_t *req, bool ok, const char *result)
+{
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    cJSON_AddBoolToObject(root, "ok", ok);
+    cJSON_AddStringToObject(root, "result", result ? result : "");
+    esp_err_t ret = http_send_json_object(req, root);
+    cJSON_Delete(root);
+    return ret;
+}
+
+static esp_err_t http_send_tool_result(httpd_req_t *req, const char *tool_name,
+                                       const char *input_json, size_t output_size)
+{
+    char *output = calloc(1, output_size);
+    if (!output) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = tool_registry_execute(tool_name, input_json ? input_json : "{}", output, output_size);
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        free(output);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    cJSON_AddBoolToObject(root, "ok", err == ESP_OK);
+    cJSON_AddStringToObject(root, "result", output);
+    if (err != ESP_OK) {
+        cJSON_AddStringToObject(root, "error", esp_err_to_name(err));
+    }
+
+    esp_err_t ret = http_send_json_object(req, root);
+    cJSON_Delete(root);
+    free(output);
+    return ret;
+}
+
+static char *json_with_string_field(const char *key, const char *value)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) return NULL;
+
+    cJSON_AddStringToObject(obj, key, value ? value : "");
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
+
+static char *json_tail_request(const char *path, int max_bytes)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) return NULL;
+
+    cJSON_AddStringToObject(obj, "path", path ? path : "");
+    cJSON_AddNumberToObject(obj, "max_bytes", max_bytes > 0 ? max_bytes : 4096);
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
 
 static void json_add_effective_config(cJSON *root, const char *json_key,
                                       const char *ns, const char *nvs_key,
@@ -243,6 +410,201 @@ static esp_err_t http_get_config(httpd_req_t *req)
     return ret;
 }
 
+static esp_err_t http_get_api_status(httpd_req_t *req)
+{
+    return http_send_tool_result(req, "system_status", "{}", 2048);
+}
+
+static esp_err_t http_get_api_tasks(httpd_req_t *req)
+{
+    return http_send_tool_result(req, "cron_list", "{}", 4096);
+}
+
+static esp_err_t http_post_api_task_remove(httpd_req_t *req)
+{
+    char *body = http_read_body(req, 512);
+    if (!body) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    const char *job_id = cJSON_GetStringValue(cJSON_GetObjectItem(root, "job_id"));
+    if (!job_id || job_id[0] == '\0') {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing job_id");
+        return ESP_FAIL;
+    }
+
+    char *json = json_with_string_field("job_id", job_id);
+    cJSON_Delete(root);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    esp_err_t ret = http_send_tool_result(req, "cron_remove", json, 512);
+    free(json);
+    return ret;
+}
+
+static esp_err_t http_get_api_files(httpd_req_t *req)
+{
+    char prefix[192];
+    if (!http_get_query_value(req, "prefix", prefix, sizeof(prefix)) || prefix[0] == '\0') {
+        return http_send_tool_result(req, "list_dir", "{}", 4096);
+    }
+
+    char *json = json_with_string_field("prefix", prefix);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    esp_err_t ret = http_send_tool_result(req, "list_dir", json, 4096);
+    free(json);
+    return ret;
+}
+
+static esp_err_t http_get_api_file(httpd_req_t *req)
+{
+    char path[192];
+    if (!http_get_query_value(req, "path", path, sizeof(path)) || path[0] == '\0') {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing path");
+        return ESP_FAIL;
+    }
+
+    char mode[16];
+    bool tail = http_get_query_value(req, "mode", mode, sizeof(mode)) && strcmp(mode, "tail") == 0;
+    char bytes_arg[16];
+    int max_bytes = 4096;
+    if (http_get_query_value(req, "bytes", bytes_arg, sizeof(bytes_arg)) && bytes_arg[0]) {
+        int requested = atoi(bytes_arg);
+        if (requested > 0) {
+            max_bytes = requested;
+        }
+    }
+
+    char *json = tail ? json_tail_request(path, max_bytes) : json_with_string_field("path", path);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    esp_err_t ret = http_send_tool_result(req, tail ? "tail_file" : "read_file", json, 8192);
+    free(json);
+    return ret;
+}
+
+static esp_err_t http_post_api_file(httpd_req_t *req)
+{
+    char *body = http_read_body(req, 8192);
+    if (!body) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root) {
+        free(body);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(root, "path"));
+    const char *content = cJSON_GetStringValue(cJSON_GetObjectItem(root, "content"));
+    const char *mode = cJSON_GetStringValue(cJSON_GetObjectItem(root, "mode"));
+    if (!path || !content) {
+        cJSON_Delete(root);
+        free(body);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing path or content");
+        return ESP_FAIL;
+    }
+
+    const char *tool = (mode && strcmp(mode, "append") == 0) ? "append_file" : "write_file";
+    esp_err_t ret = http_send_tool_result(req, tool, body, 512);
+    cJSON_Delete(root);
+    free(body);
+    return ret;
+}
+
+static esp_err_t http_get_api_memory(httpd_req_t *req)
+{
+    char *long_term = calloc(1, 4096);
+    char *recent = calloc(1, 4096);
+    if (!long_term || !recent) {
+        free(long_term);
+        free(recent);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    memory_read_long_term(long_term, 4096);
+    memory_read_recent(recent, 4096, 3);
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        free(long_term);
+        free(recent);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddStringToObject(root, "long_term", long_term);
+    cJSON_AddStringToObject(root, "recent", recent);
+    esp_err_t ret = http_send_json_object(req, root);
+    cJSON_Delete(root);
+    free(long_term);
+    free(recent);
+    return ret;
+}
+
+static esp_err_t http_post_api_memory(httpd_req_t *req)
+{
+    char *body = http_read_body(req, 8192);
+    if (!body) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    const char *note = cJSON_GetStringValue(cJSON_GetObjectItem(root, "note"));
+    const char *long_term = cJSON_GetStringValue(cJSON_GetObjectItem(root, "long_term"));
+
+    esp_err_t err = ESP_ERR_INVALID_ARG;
+    const char *message = "No memory field provided";
+    if (note && note[0]) {
+        err = memory_append_today(note);
+        message = (err == ESP_OK) ? "Appended note to daily memory" : "Failed to append daily memory";
+    } else if (long_term) {
+        err = memory_write_long_term(long_term);
+        message = (err == ESP_OK) ? "Updated long-term memory" : "Failed to update long-term memory";
+    }
+
+    cJSON_Delete(root);
+    return http_send_text_result(req, err == ESP_OK, message);
+}
+
+static esp_err_t http_post_api_heartbeat(httpd_req_t *req)
+{
+    bool triggered = heartbeat_trigger();
+    return http_send_text_result(req, true,
+                                 triggered ? "Heartbeat prompted the agent" : "No actionable heartbeat tasks");
+}
+
 /*
  * Sync one JSON string field into NVS.
  * - missing field: leave current NVS value unchanged
@@ -423,7 +785,7 @@ static httpd_handle_t start_http_server(bool captive)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = MIMI_ONBOARD_HTTP_PORT;
-    config.max_uri_handlers = captive ? 16 : 8;
+    config.max_uri_handlers = captive ? 28 : 20;
     config.stack_size = 8192;
     config.lru_purge_enable = true;
 
@@ -454,6 +816,51 @@ static httpd_handle_t start_http_server(bool captive)
         .uri = "/save", .method = HTTP_POST, .handler = http_post_save,
     };
     httpd_register_uri_handler(s_server, &uri_save);
+
+    httpd_uri_t uri_api_status = {
+        .uri = "/api/status", .method = HTTP_GET, .handler = http_get_api_status,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_status);
+
+    httpd_uri_t uri_api_tasks = {
+        .uri = "/api/tasks", .method = HTTP_GET, .handler = http_get_api_tasks,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_tasks);
+
+    httpd_uri_t uri_api_task_remove = {
+        .uri = "/api/task/remove", .method = HTTP_POST, .handler = http_post_api_task_remove,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_task_remove);
+
+    httpd_uri_t uri_api_files = {
+        .uri = "/api/files", .method = HTTP_GET, .handler = http_get_api_files,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_files);
+
+    httpd_uri_t uri_api_file_get = {
+        .uri = "/api/file", .method = HTTP_GET, .handler = http_get_api_file,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_file_get);
+
+    httpd_uri_t uri_api_file_post = {
+        .uri = "/api/file", .method = HTTP_POST, .handler = http_post_api_file,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_file_post);
+
+    httpd_uri_t uri_api_memory_get = {
+        .uri = "/api/memory", .method = HTTP_GET, .handler = http_get_api_memory,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_memory_get);
+
+    httpd_uri_t uri_api_memory_post = {
+        .uri = "/api/memory", .method = HTTP_POST, .handler = http_post_api_memory,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_memory_post);
+
+    httpd_uri_t uri_api_heartbeat = {
+        .uri = "/api/heartbeat", .method = HTTP_POST, .handler = http_post_api_heartbeat,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_heartbeat);
 
     if (captive) {
         /* Captive portal detection endpoints */
