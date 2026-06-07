@@ -25,8 +25,22 @@ static const char *TAG = "agent";
 static int s_turns_since_memory_summary = 0;
 static int64_t s_last_memory_summary_us = 0;
 
+static void *large_calloc(size_t count, size_t size)
+{
+#if CONFIG_SPIRAM
+    void *ptr = heap_caps_calloc(count, size, MALLOC_CAP_SPIRAM);
+    if (ptr) {
+        return ptr;
+    }
+#endif
+    return heap_caps_calloc(count, size, MALLOC_CAP_8BIT);
+}
+
 static void maybe_refresh_memory_summary(char *tool_output, size_t tool_output_size)
 {
+    if (!MIMI_ENABLE_AUTO_MEMORY_SUMMARY) {
+        return;
+    }
     if (!tool_output || tool_output_size == 0) {
         return;
     }
@@ -207,10 +221,10 @@ static void agent_loop_task(void *arg)
 {
     ESP_LOGI(TAG, "Agent loop started on core %d", xPortGetCoreID());
 
-    /* Allocate large buffers from PSRAM */
-    char *system_prompt = heap_caps_calloc(1, MIMI_CONTEXT_BUF_SIZE, MALLOC_CAP_SPIRAM);
-    char *history_json = heap_caps_calloc(1, MIMI_LLM_STREAM_BUF_SIZE, MALLOC_CAP_SPIRAM);
-    char *tool_output = heap_caps_calloc(1, TOOL_OUTPUT_SIZE, MALLOC_CAP_SPIRAM);
+    /* Allocate large buffers from PSRAM when available, or internal heap on C3-lite. */
+    char *system_prompt = large_calloc(1, MIMI_CONTEXT_BUF_SIZE);
+    char *history_json = large_calloc(1, MIMI_LLM_STREAM_BUF_SIZE);
+    char *tool_output = large_calloc(1, TOOL_OUTPUT_SIZE);
 
     if (!system_prompt || !history_json || !tool_output) {
         ESP_LOGE(TAG, "Failed to allocate PSRAM buffers");

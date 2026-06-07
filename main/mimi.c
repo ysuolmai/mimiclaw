@@ -80,6 +80,7 @@ static void outbound_dispatch_task(void *arg)
             } else {
                 ESP_LOGI(TAG, "Telegram send success for %s (%d bytes)", msg.chat_id, (int)strlen(msg.content));
             }
+#if MIMI_ENABLE_FEISHU
         } else if (strcmp(msg.channel, MIMI_CHAN_FEISHU) == 0) {
             esp_err_t send_err = feishu_send_message(msg.chat_id, msg.content);
             if (send_err != ESP_OK) {
@@ -87,11 +88,14 @@ static void outbound_dispatch_task(void *arg)
             } else {
                 ESP_LOGI(TAG, "Feishu send success for %s (%d bytes)", msg.chat_id, (int)strlen(msg.content));
             }
+#endif
+#if MIMI_ENABLE_WEBSOCKET
         } else if (strcmp(msg.channel, MIMI_CHAN_WEBSOCKET) == 0) {
             esp_err_t ws_err = ws_server_send(msg.chat_id, msg.content);
             if (ws_err != ESP_OK) {
                 ESP_LOGW(TAG, "WS send failed for %s: %s", msg.chat_id, esp_err_to_name(ws_err));
             }
+#endif
         } else if (strcmp(msg.channel, MIMI_CHAN_SYSTEM) == 0) {
             ESP_LOGI(TAG, "System message [%s]: %.128s", msg.chat_id, msg.content);
         } else {
@@ -108,7 +112,8 @@ void app_main(void)
     esp_log_level_set("esp-x509-crt-bundle", ESP_LOG_WARN);
 
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "  MimiClaw - ESP32-S3 AI Agent");
+    ESP_LOGI(TAG, "  MimiClaw - %s AI Agent",
+             MIMI_TARGET_C3_LITE ? "ESP32-C3 Super Mini Lite" : "ESP32-S3 Super Mini");
     ESP_LOGI(TAG, "========================================");
 
     /* Print memory info */
@@ -130,7 +135,9 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(http_proxy_init());
     ESP_ERROR_CHECK(telegram_bot_init());
+#if MIMI_ENABLE_FEISHU
     ESP_ERROR_CHECK(feishu_bot_init());
+#endif
     ESP_ERROR_CHECK(llm_proxy_init());
     ESP_ERROR_CHECK(tool_registry_init());
     ESP_ERROR_CHECK(cron_service_init());
@@ -178,10 +185,16 @@ void app_main(void)
         /* Start network-dependent services */
         ESP_ERROR_CHECK(agent_loop_start());
         ESP_ERROR_CHECK(telegram_bot_start());
+#if MIMI_ENABLE_FEISHU
         ESP_ERROR_CHECK(feishu_bot_start());
+#endif
         cron_service_start();
         heartbeat_start();
+#if MIMI_ENABLE_WEBSOCKET
         ESP_ERROR_CHECK(ws_server_start());
+#else
+        ESP_LOGI(TAG, "WebSocket gateway disabled in this target profile");
+#endif
 
         ESP_LOGI(TAG, "All services started!");
     }

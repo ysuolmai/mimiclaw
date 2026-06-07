@@ -2,6 +2,8 @@
 
 /* MimiClaw Global Configuration */
 
+#include "sdkconfig.h"
+
 /* Build-time secrets (highest priority, override NVS) */
 #if __has_include("mimi_secrets.h")
 #include "mimi_secrets.h"
@@ -47,6 +49,26 @@
 #define MIMI_SECRET_TAVILY_KEY      ""
 #endif
 
+/* Target feature profile */
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define MIMI_TARGET_C3_LITE          1
+#else
+#define MIMI_TARGET_C3_LITE          0
+#endif
+
+#ifndef MIMI_ENABLE_FEISHU
+#define MIMI_ENABLE_FEISHU           (!MIMI_TARGET_C3_LITE)
+#endif
+#ifndef MIMI_ENABLE_WEBSOCKET
+#define MIMI_ENABLE_WEBSOCKET        (!MIMI_TARGET_C3_LITE)
+#endif
+#ifndef MIMI_ENABLE_WEB_SEARCH
+#define MIMI_ENABLE_WEB_SEARCH       (!MIMI_TARGET_C3_LITE)
+#endif
+#ifndef MIMI_ENABLE_AUTO_MEMORY_SUMMARY
+#define MIMI_ENABLE_AUTO_MEMORY_SUMMARY (!MIMI_TARGET_C3_LITE)
+#endif
+
 /* WiFi */
 #define MIMI_WIFI_MAX_RETRY          10
 #define MIMI_WIFI_RETRY_BASE_MS      1000
@@ -55,7 +77,11 @@
 /* Telegram Bot */
 #define MIMI_TG_POLL_TIMEOUT_S       30
 #define MIMI_TG_MAX_MSG_LEN          4096
+#if MIMI_TARGET_C3_LITE
+#define MIMI_TG_POLL_STACK           (8 * 1024)
+#else
 #define MIMI_TG_POLL_STACK           (12 * 1024)
+#endif
 #define MIMI_TG_POLL_PRIO            5
 #define MIMI_TG_POLL_CORE            0
 #define MIMI_TG_CARD_SHOW_MS         3000
@@ -71,12 +97,20 @@
 #define MIMI_FEISHU_WEBHOOK_MAX_BODY     (16 * 1024)
 
 /* Agent Loop */
+#if MIMI_TARGET_C3_LITE
+#define MIMI_AGENT_STACK             (12 * 1024)
+#define MIMI_AGENT_CORE              0
+#define MIMI_AGENT_MAX_HISTORY       6
+#define MIMI_AGENT_MAX_TOOL_ITER     3
+#define MIMI_MAX_TOOL_CALLS          2
+#else
 #define MIMI_AGENT_STACK             (24 * 1024)
-#define MIMI_AGENT_PRIO              6
 #define MIMI_AGENT_CORE              1
 #define MIMI_AGENT_MAX_HISTORY       20
 #define MIMI_AGENT_MAX_TOOL_ITER     10
 #define MIMI_MAX_TOOL_CALLS          4
+#endif
+#define MIMI_AGENT_PRIO              6
 #define MIMI_AGENT_SEND_WORKING_STATUS 1
 
 /* Timezone (POSIX TZ format) */
@@ -85,17 +119,26 @@
 /* LLM */
 #define MIMI_LLM_DEFAULT_MODEL       "claude-opus-4-5"
 #define MIMI_LLM_PROVIDER_DEFAULT    "anthropic"
+#if MIMI_TARGET_C3_LITE
+#define MIMI_LLM_MAX_TOKENS          1024
+#define MIMI_LLM_STREAM_BUF_SIZE     (12 * 1024)
+#else
 #define MIMI_LLM_MAX_TOKENS          4096
+#define MIMI_LLM_STREAM_BUF_SIZE     (32 * 1024)
+#endif
 #define MIMI_LLM_API_URL             "https://api.anthropic.com/v1/messages"
 #define MIMI_OPENAI_API_URL          "https://api.openai.com/v1/chat/completions"
 #define MIMI_LLM_API_VERSION         "2023-06-01"
-#define MIMI_LLM_STREAM_BUF_SIZE     (32 * 1024)
 #define MIMI_LLM_LOG_VERBOSE_PAYLOAD 0
 #define MIMI_LLM_LOG_PREVIEW_BYTES   160
 
 /* Message Bus */
 #define MIMI_BUS_QUEUE_LEN           16
+#if MIMI_TARGET_C3_LITE
+#define MIMI_OUTBOUND_STACK          (8 * 1024)
+#else
 #define MIMI_OUTBOUND_STACK          (12 * 1024)
+#endif
 #define MIMI_OUTBOUND_PRIO           5
 #define MIMI_OUTBOUND_CORE           0
 
@@ -108,8 +151,13 @@
 #define MIMI_MEMORY_SUMMARY_FILE     MIMI_SPIFFS_MEMORY_DIR "/SUMMARY.md"
 #define MIMI_SOUL_FILE               MIMI_SPIFFS_CONFIG_DIR "/SOUL.md"
 #define MIMI_USER_FILE               MIMI_SPIFFS_CONFIG_DIR "/USER.md"
+#if MIMI_TARGET_C3_LITE
+#define MIMI_CONTEXT_BUF_SIZE        (8 * 1024)
+#define MIMI_SESSION_MAX_MSGS        6
+#else
 #define MIMI_CONTEXT_BUF_SIZE        (16 * 1024)
 #define MIMI_SESSION_MAX_MSGS        20
+#endif
 
 /* Cron / Heartbeat */
 #define MIMI_CRON_FILE               MIMI_SPIFFS_BASE "/cron.json"
@@ -126,7 +174,11 @@
 
 /* WebSocket Gateway */
 #define MIMI_WS_PORT                 18789
+#if MIMI_TARGET_C3_LITE
+#define MIMI_WS_MAX_CLIENTS          1
+#else
 #define MIMI_WS_MAX_CLIENTS          4
+#endif
 
 /* Serial CLI */
 #define MIMI_CLI_STACK               (4 * 1024)

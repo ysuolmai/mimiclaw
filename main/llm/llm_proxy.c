@@ -83,6 +83,28 @@ static void safe_copy(char *dst, size_t dst_size, const char *src)
 
 /* ── Response buffer ──────────────────────────────────────────── */
 
+static void *large_calloc(size_t count, size_t size)
+{
+#if CONFIG_SPIRAM
+    void *ptr = heap_caps_calloc(count, size, MALLOC_CAP_SPIRAM);
+    if (ptr) {
+        return ptr;
+    }
+#endif
+    return heap_caps_calloc(count, size, MALLOC_CAP_8BIT);
+}
+
+static void *large_realloc(void *ptr, size_t size)
+{
+#if CONFIG_SPIRAM
+    void *next = heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM);
+    if (next) {
+        return next;
+    }
+#endif
+    return heap_caps_realloc(ptr, size, MALLOC_CAP_8BIT);
+}
+
 typedef struct {
     char *data;
     size_t len;
@@ -91,7 +113,7 @@ typedef struct {
 
 static esp_err_t resp_buf_init(resp_buf_t *rb, size_t initial_cap)
 {
-    rb->data = heap_caps_calloc(1, initial_cap, MALLOC_CAP_SPIRAM);
+    rb->data = large_calloc(1, initial_cap);
     if (!rb->data) return ESP_ERR_NO_MEM;
     rb->len = 0;
     rb->cap = initial_cap;
@@ -102,7 +124,7 @@ static esp_err_t resp_buf_append(resp_buf_t *rb, const char *data, size_t len)
 {
     while (rb->len + len >= rb->cap) {
         size_t new_cap = rb->cap * 2;
-        char *tmp = heap_caps_realloc(rb->data, new_cap, MALLOC_CAP_SPIRAM);
+        char *tmp = large_realloc(rb->data, new_cap);
         if (!tmp) return ESP_ERR_NO_MEM;
         rb->data = tmp;
         rb->cap = new_cap;

@@ -23,7 +23,11 @@ static char s_brave_key[128] = {0};
 static char s_tavily_key[128] = {0};
 static search_provider_t s_provider = SEARCH_PROVIDER_NONE;
 
+#if MIMI_TARGET_C3_LITE
+#define SEARCH_BUF_SIZE     (8 * 1024)
+#else
 #define SEARCH_BUF_SIZE     (16 * 1024)
+#endif
 #define SEARCH_RESULT_COUNT 5
 
 /* ── Response accumulator ─────────────────────────────────────── */
@@ -33,6 +37,17 @@ typedef struct {
     size_t len;
     size_t cap;
 } search_buf_t;
+
+static void *large_calloc(size_t count, size_t size)
+{
+#if CONFIG_SPIRAM
+    void *ptr = heap_caps_calloc(count, size, MALLOC_CAP_SPIRAM);
+    if (ptr) {
+        return ptr;
+    }
+#endif
+    return heap_caps_calloc(count, size, MALLOC_CAP_8BIT);
+}
 
 static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
@@ -444,9 +459,9 @@ esp_err_t tool_web_search_execute(const char *input_json, char *output, size_t o
     snprintf(query_copy, sizeof(query_copy), "%s", query->valuestring);
     cJSON_Delete(input);
 
-    /* Allocate response buffer from PSRAM */
+    /* Allocate response buffer from PSRAM when available, or internal heap on C3-lite. */
     search_buf_t sb = {0};
-    sb.data = heap_caps_calloc(1, SEARCH_BUF_SIZE, MALLOC_CAP_SPIRAM);
+    sb.data = large_calloc(1, SEARCH_BUF_SIZE);
     if (!sb.data) {
         snprintf(output, output_size, "Error: Out of memory");
         return ESP_ERR_NO_MEM;

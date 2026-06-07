@@ -58,6 +58,7 @@ esp_err_t tool_registry_init(void)
 {
     s_tool_count = 0;
 
+#if MIMI_ENABLE_WEB_SEARCH
     /* Register web_search */
     tool_web_search_init();
 
@@ -71,6 +72,9 @@ esp_err_t tool_registry_init(void)
         .execute = tool_web_search_execute,
     };
     register_tool(&ws);
+#else
+    ESP_LOGI(TAG, "web_search disabled in this target profile");
+#endif
 
     /* Register get_current_time */
     mimi_tool_t gt = {

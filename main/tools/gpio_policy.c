@@ -91,6 +91,9 @@ bool gpio_policy_pin_is_allowed(int pin)
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
     return pin_is_allowed_impl(pin, MIMI_GPIO_ALLOWED_CSV,
                                MIMI_GPIO_MIN_PIN, MIMI_GPIO_MAX_PIN, false, true);
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+    return pin_is_allowed_impl(pin, MIMI_GPIO_ALLOWED_CSV,
+                               MIMI_GPIO_MIN_PIN, MIMI_GPIO_MAX_PIN, false, false);
 #else
     return pin_is_allowed_impl(pin, MIMI_GPIO_ALLOWED_CSV,
                                MIMI_GPIO_MIN_PIN, MIMI_GPIO_MAX_PIN, false, false);
@@ -110,6 +113,13 @@ bool gpio_policy_pin_forbidden_hint(int pin, char *result, size_t result_len)
     if (pin == 19 || pin == 20) {
         snprintf(result, result_len,
                  "Error: pin %d is reserved for ESP32-S3 USB Serial/JTAG (GPIO19/20); choose a different pin",
+                 pin);
+        return true;
+    }
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+    if (pin == 18 || pin == 19) {
+        snprintf(result, result_len,
+                 "Error: pin %d is reserved for ESP32-C3 USB Serial/JTAG (GPIO18/19); choose a different pin",
                  pin);
         return true;
     }

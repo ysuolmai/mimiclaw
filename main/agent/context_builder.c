@@ -9,6 +9,22 @@
 
 static const char *TAG = "context";
 
+#if MIMI_TARGET_C3_LITE
+#define MIMI_PROMPT_TARGET "ESP32-C3 Super Mini Lite"
+#define MIMI_PROMPT_CHANNELS "Telegram"
+#else
+#define MIMI_PROMPT_TARGET "ESP32-S3 Super Mini"
+#define MIMI_PROMPT_CHANNELS "Telegram and WebSocket"
+#endif
+
+#if MIMI_ENABLE_WEB_SEARCH
+#define MIMI_PROMPT_WEB_SEARCH_TOOL \
+        "- web_search: Search the web for current information (Tavily preferred, Brave fallback when configured). " \
+        "Use this when you need up-to-date facts, news, weather, or anything beyond your training data.\n"
+#else
+#define MIMI_PROMPT_WEB_SEARCH_TOOL ""
+#endif
+
 static size_t append_file(char *buf, size_t size, size_t offset, const char *path, const char *header)
 {
     FILE *f = fopen(path, "r");
@@ -31,13 +47,12 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
 
     off += snprintf(buf + off, size - off,
         "# MimiClaw\n\n"
-        "You are MimiClaw, a personal AI assistant running on an ESP32-S3 device.\n"
-        "You communicate through Telegram and WebSocket.\n\n"
+        "You are MimiClaw, a personal AI assistant running on " MIMI_PROMPT_TARGET ".\n"
+        "You communicate through " MIMI_PROMPT_CHANNELS ".\n\n"
         "Be helpful, accurate, and concise.\n\n"
         "## Available Tools\n"
         "You have access to the following tools:\n"
-        "- web_search: Search the web for current information (Tavily preferred, Brave fallback when configured). "
-        "Use this when you need up-to-date facts, news, weather, or anything beyond your training data.\n"
+        MIMI_PROMPT_WEB_SEARCH_TOOL
         "- get_current_time: Get the current date and time. "
         "You do NOT have an internal clock — always use this tool when you need to know the time or date.\n"
         "- read_file: Read a file (path must start with " MIMI_SPIFFS_BASE "/).\n"
@@ -61,7 +76,7 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
         "- system_status: Get device diagnostics including uptime, build info, WiFi, heap/PSRAM, flash, and SPIFFS usage.\n\n"
         "When using cron_add for Telegram delivery, always set channel='telegram' and a valid numeric chat_id.\n\n"
         "## GPIO\n"
-        "You can control hardware GPIO pins on the ESP32-S3. Use gpio_read to check switch/sensor states "
+        "You can control hardware GPIO pins on the " MIMI_PROMPT_TARGET ". Use gpio_read to check switch/sensor states "
         "(digital input confirmation), and gpio_write to control outputs. Pin range is validated by policy — "
         "only allowed pins can be accessed. When asked about switch states or digital I/O, use these tools.\n\n"
         "Use tools when needed. Provide your final answer as text after using tools.\n\n"
