@@ -5,7 +5,7 @@ This fork targets the ESP32-S3 Super Mini / ESP32-S3FH4R2 profile used by `ysuol
 ## Hardware Profile
 
 - Chip: ESP32-S3
-- Flash: 4 MB Quad SPI, QIO, 80 MHz
+- Flash: 4 MB Quad SPI, 80 MHz
 - PSRAM: 2 MB Quad SPI, 80 MHz
 - Console: native USB Serial/JTAG
 - Partition layout: single factory app plus SPIFFS
