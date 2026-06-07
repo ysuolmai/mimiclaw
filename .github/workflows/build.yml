@@ -5,6 +5,7 @@ on:
     branches:
       - '**'
   pull_request:
+  workflow_dispatch:
 
 jobs:
   idf-build:
@@ -23,3 +24,38 @@ jobs:
           idf.py set-target esp32s3
           idf.py fullclean
           idf.py build
+
+      - name: Create merged firmware image
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          esptool.py --chip esp32s3 merge_bin \
+            --flash_mode qio \
+            --flash_freq 80m \
+            --flash_size 4MB \
+            -o build/mimiclaw-esp32-s3-supermini-merged.bin \
+            0x0      build/bootloader/bootloader.bin \
+            0x8000   build/partition_table/partition-table.bin \
+            0x20000  build/mimiclaw.bin \
+            0x340000 build/spiffs.bin
+
+      - name: Show image sizes
+        if: always()
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          python "$IDF_PATH/tools/idf_size.py" build/mimiclaw.elf || true
+          ls -lh build/*.bin build/bootloader/*.bin build/partition_table/*.bin || true
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mimiclaw-esp32-s3-supermini-firmware
+          path: |
+            build/mimiclaw-esp32-s3-supermini-merged.bin
+            build/mimiclaw.bin
+            build/spiffs.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flasher_args.json
+            build/project_description.json
