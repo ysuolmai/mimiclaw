@@ -6,6 +6,7 @@
 #include "tools/tool_cron.h"
 #include "tools/tool_gpio.h"
 #include "tools/tool_system.h"
+#include "tools/tool_memory.h"
 
 #include <string.h>
 #include "esp_log.h"
@@ -13,7 +14,7 @@
 
 static const char *TAG = "tools";
 
-#define MAX_TOOLS 16
+#define MAX_TOOLS 24
 
 static mimi_tool_t s_tools[MAX_TOOLS];
 static int s_tool_count = 0;
@@ -121,6 +122,31 @@ esp_err_t tool_registry_init(void)
     };
     register_tool(&af);
 
+    /* Register file_info */
+    mimi_tool_t fi = {
+        .name = "file_info",
+        .description = "Get metadata for a SPIFFS file, including type, size, and modified timestamp.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Absolute path starting with " MIMI_SPIFFS_BASE "/\"}},"
+            "\"required\":[\"path\"]}",
+        .execute = tool_file_info_execute,
+    };
+    register_tool(&fi);
+
+    /* Register tail_file */
+    mimi_tool_t tf = {
+        .name = "tail_file",
+        .description = "Read the last bytes of a SPIFFS file. Useful for logs, daily notes, and large files.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Absolute path starting with " MIMI_SPIFFS_BASE "/\"},"
+            "\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum bytes to return. Default 4096\"}},"
+            "\"required\":[\"path\"]}",
+        .execute = tool_tail_file_execute,
+    };
+    register_tool(&tf);
+
     /* Register edit_file */
     mimi_tool_t ef = {
         .name = "edit_file",
@@ -146,6 +172,18 @@ esp_err_t tool_registry_init(void)
         .execute = tool_list_dir_execute,
     };
     register_tool(&ld);
+
+    /* Register memory_append */
+    mimi_tool_t ma = {
+        .name = "memory_append",
+        .description = "Append a short note to today's daily memory file.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"note\":{\"type\":\"string\",\"description\":\"Short note to append to today's daily memory\"}},"
+            "\"required\":[\"note\"]}",
+        .execute = tool_memory_append_execute,
+    };
+    register_tool(&ma);
 
     /* Register cron_add */
     mimi_tool_t ca = {

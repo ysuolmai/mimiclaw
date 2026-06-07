@@ -22,6 +22,18 @@ esp_err_t tool_write_file_execute(const char *input_json, char *output, size_t o
 esp_err_t tool_append_file_execute(const char *input_json, char *output, size_t output_size);
 
 /**
+ * Get metadata for a file on SPIFFS.
+ * Input JSON: {"path": "<MIMI_SPIFFS_BASE>/..."}
+ */
+esp_err_t tool_file_info_execute(const char *input_json, char *output, size_t output_size);
+
+/**
+ * Read the end of a file on SPIFFS.
+ * Input JSON: {"path": "<MIMI_SPIFFS_BASE>/...", "max_bytes": 4096}
+ */
+esp_err_t tool_tail_file_execute(const char *input_json, char *output, size_t output_size);
+
+/**
  * Find-and-replace edit a file on SPIFFS.
  * Input JSON: {"path": "<MIMI_SPIFFS_BASE>/...", "old_string": "...", "new_string": "..."}
  */

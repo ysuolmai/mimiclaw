@@ -2,7 +2,12 @@
 #include "mimi_config.h"
 #include "bus/message_bus.h"
 #include "proxy/http_proxy.h"
+#include "memory/memory_store.h"
+#include "memory/session_mgr.h"
+#include "tools/tool_system.h"
 
+#include <ctype.h>
+#include <inttypes.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -281,6 +286,136 @@ static bool tg_response_is_ok(const char *resp, const char **out_desc)
     return false;
 }
 
+static bool telegram_command_matches(const char *text, const char *cmd, const char **out_args)
+{
+    if (!text || !cmd || text[0] != '/') {
+        return false;
+    }
+
+    const char *end = text;
+    while (*end && !isspace((unsigned char)*end)) {
+        end++;
+    }
+
+    size_t token_len = (size_t)(end - text);
+    size_t cmd_len = strlen(cmd);
+    if (token_len < cmd_len || strncmp(text, cmd, cmd_len) != 0) {
+        return false;
+    }
+    if (token_len != cmd_len && text[cmd_len] != '@') {
+        return false;
+    }
+
+    while (*end && isspace((unsigned char)*end)) {
+        end++;
+    }
+    if (out_args) {
+        *out_args = end;
+    }
+    return true;
+}
+
+static void telegram_send_help(const char *chat_id)
+{
+    telegram_send_message(chat_id,
+        "MimiClaw commands:\n"
+        "/help - show this help\n"
+        "/id - show this chat id\n"
+        "/status - show device status\n"
+        "/memory - show long-term memory\n"
+        "/remember <note> - append a daily memory note\n"
+        "/forget - clear this chat session\n\n"
+        "Send any normal message to chat with the AI agent.");
+}
+
+static bool handle_builtin_command(const char *chat_id, const char *text)
+{
+    const char *args = NULL;
+
+    if (telegram_command_matches(text, "/start", &args) ||
+        telegram_command_matches(text, "/help", &args)) {
+        telegram_send_help(chat_id);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/id", &args)) {
+        char reply[96];
+        snprintf(reply, sizeof(reply), "chat_id: %s", chat_id);
+        telegram_send_message(chat_id, reply);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/status", &args)) {
+        char *status = calloc(1, 2048);
+        if (!status) {
+            telegram_send_message(chat_id, "Out of memory while building status.");
+            return true;
+        }
+
+        esp_err_t err = tool_system_status_execute("{}", status, 2048);
+        if (err != ESP_OK && status[0] == '\0') {
+            snprintf(status, 2048, "system_status failed: %s", esp_err_to_name(err));
+        }
+        telegram_send_message(chat_id, status[0] ? status : "(empty status)");
+        free(status);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/memory", &args)) {
+        char *mem = calloc(1, 4096);
+        if (!mem) {
+            telegram_send_message(chat_id, "Out of memory while reading MEMORY.md.");
+            return true;
+        }
+
+        if (memory_read_long_term(mem, 4096) == ESP_OK && mem[0]) {
+            size_t reply_size = strlen(mem) + 32;
+            char *reply = calloc(1, reply_size);
+            if (reply) {
+                snprintf(reply, reply_size, "MEMORY.md\n\n%s", mem);
+                telegram_send_message(chat_id, reply);
+                free(reply);
+            } else {
+                telegram_send_message(chat_id, mem);
+            }
+        } else {
+            telegram_send_message(chat_id, "MEMORY.md is empty or not found.");
+        }
+
+        free(mem);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/remember", &args)) {
+        if (!args || args[0] == '\0') {
+            telegram_send_message(chat_id, "Usage: /remember <note>");
+            return true;
+        }
+
+        esp_err_t err = memory_append_today(args);
+        if (err == ESP_OK) {
+            telegram_send_message(chat_id, "Saved to today's daily memory.");
+        } else {
+            char reply[96];
+            snprintf(reply, sizeof(reply), "Failed to save memory: %s", esp_err_to_name(err));
+            telegram_send_message(chat_id, reply);
+        }
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/forget", &args)) {
+        esp_err_t err = session_clear(chat_id);
+        if (err == ESP_OK) {
+            telegram_send_message(chat_id, "This chat session was cleared.");
+        } else {
+            telegram_send_message(chat_id, "No saved session was found for this chat.");
+        }
+        return true;
+    }
+
+    return false;
+}
+
 static void process_updates(const char *json_str)
 {
     cJSON *root = cJSON_Parse(json_str);
@@ -355,6 +490,10 @@ static void process_updates(const char *json_str)
 
         ESP_LOGI(TAG, "Message update_id=%" PRId64 " message_id=%d from chat %s: %.40s...",
                  uid, msg_id_val, chat_id_str, text->valuestring);
+
+        if (handle_builtin_command(chat_id_str, text->valuestring)) {
+            continue;
+        }
 
         /* Push to inbound bus */
         mimi_msg_t msg = {0};

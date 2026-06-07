@@ -160,6 +160,140 @@ esp_err_t tool_append_file_execute(const char *input_json, char *output, size_t 
     return ESP_OK;
 }
 
+/* ── file_info ─────────────────────────────────────────────── */
+
+esp_err_t tool_file_info_execute(const char *input_json, char *output, size_t output_size)
+{
+    cJSON *root = cJSON_Parse(input_json);
+    if (!root) {
+        snprintf(output, output_size, "Error: invalid JSON input");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(root, "path"));
+    if (!validate_path(path)) {
+        snprintf(output, output_size, "Error: path must start with %s/ and must not contain '..'", MIMI_SPIFFS_BASE);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        snprintf(output, output_size, "Error: file not found: %s", path);
+        cJSON_Delete(root);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    snprintf(output, output_size,
+             "path: %s\n"
+             "type: %s\n"
+             "size_bytes: %ld\n"
+             "modified_epoch: %ld\n",
+             path,
+             S_ISDIR(st.st_mode) ? "directory" : "file",
+             (long)st.st_size,
+             (long)st.st_mtime);
+
+    ESP_LOGI(TAG, "file_info: %s (%ld bytes)", path, (long)st.st_size);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+/* ── tail_file ─────────────────────────────────────────────── */
+
+esp_err_t tool_tail_file_execute(const char *input_json, char *output, size_t output_size)
+{
+    if (output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_Parse(input_json);
+    if (!root) {
+        snprintf(output, output_size, "Error: invalid JSON input");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(root, "path"));
+    if (!validate_path(path)) {
+        snprintf(output, output_size, "Error: path must start with %s/ and must not contain '..'", MIMI_SPIFFS_BASE);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int max_bytes = 4096;
+    cJSON *max_item = cJSON_GetObjectItem(root, "max_bytes");
+    if (cJSON_IsNumber(max_item)) {
+        max_bytes = max_item->valueint;
+    }
+    if (max_bytes <= 0) {
+        snprintf(output, output_size, "Error: max_bytes must be positive");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if ((size_t)max_bytes >= output_size) {
+        max_bytes = (int)output_size - 1;
+    }
+    if (max_bytes > MAX_FILE_SIZE) {
+        max_bytes = MAX_FILE_SIZE;
+    }
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        snprintf(output, output_size, "Error: file not found: %s", path);
+        cJSON_Delete(root);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        snprintf(output, output_size, "Error: cannot seek file: %s", path);
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    long file_size = ftell(f);
+    if (file_size < 0) {
+        fclose(f);
+        snprintf(output, output_size, "Error: cannot get file size: %s", path);
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    long start = file_size > max_bytes ? file_size - max_bytes : 0;
+    if (fseek(f, start, SEEK_SET) != 0) {
+        fclose(f);
+        snprintf(output, output_size, "Error: cannot seek file: %s", path);
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    size_t off = 0;
+    int header_len = snprintf(output, output_size,
+                              "[tail_file: %s, size=%ld, showing_last=%ld]\n",
+                              path, file_size, file_size - start);
+    if (header_len < 0) {
+        fclose(f);
+        snprintf(output, output_size, "Error: cannot format tail header");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    if ((size_t)header_len >= output_size) {
+        fclose(f);
+        output[output_size - 1] = '\0';
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+    off = (size_t)header_len;
+
+    size_t n = fread(output + off, 1, output_size - off - 1, f);
+    output[off + n] = '\0';
+    fclose(f);
+
+    ESP_LOGI(TAG, "tail_file: %s (%d of %ld bytes)", path, (int)n, file_size);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
 /* ── edit_file ─────────────────────────────────────────────── */
 
 esp_err_t tool_edit_file_execute(const char *input_json, char *output, size_t output_size)
