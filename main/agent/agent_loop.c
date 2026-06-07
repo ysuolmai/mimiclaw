@@ -6,17 +6,52 @@
 #include "memory/session_mgr.h"
 #include "tools/tool_registry.h"
 
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "cJSON.h"
 
 static const char *TAG = "agent";
 
 #define TOOL_OUTPUT_SIZE  (8 * 1024)
+#define MEMORY_SUMMARY_TURN_INTERVAL 6
+#define MEMORY_SUMMARY_MIN_INTERVAL_US (30LL * 60LL * 1000000LL)
+
+static int s_turns_since_memory_summary = 0;
+static int64_t s_last_memory_summary_us = 0;
+
+static void maybe_refresh_memory_summary(char *tool_output, size_t tool_output_size)
+{
+    if (!tool_output || tool_output_size == 0) {
+        return;
+    }
+
+    s_turns_since_memory_summary++;
+    int64_t now_us = esp_timer_get_time();
+    if (s_turns_since_memory_summary < MEMORY_SUMMARY_TURN_INTERVAL &&
+        (now_us - s_last_memory_summary_us) < MEMORY_SUMMARY_MIN_INTERVAL_US) {
+        return;
+    }
+
+    tool_output[0] = '\0';
+    esp_err_t err = tool_registry_execute(
+        "memory_summarize",
+        "{\"days\":7,\"include_sessions\":true}",
+        tool_output,
+        tool_output_size);
+    if (err == ESP_OK) {
+        s_turns_since_memory_summary = 0;
+        s_last_memory_summary_us = now_us;
+        ESP_LOGI(TAG, "Auto memory summary refreshed: %.160s", tool_output);
+    } else {
+        ESP_LOGW(TAG, "Auto memory summary failed: %s", esp_err_to_name(err));
+    }
+}
 
 /* Build the assistant content array from llm_response_t for the messages history.
  * Returns a cJSON array with text and tool_use blocks. */
@@ -285,6 +320,8 @@ static void agent_loop_task(void *arg)
             } else {
                 ESP_LOGI(TAG, "Session saved for chat %s", msg.chat_id);
             }
+
+            maybe_refresh_memory_summary(tool_output, TOOL_OUTPUT_SIZE);
 
             /* Push response to outbound */
             mimi_msg_t out = {0};

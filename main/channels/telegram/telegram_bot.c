@@ -387,6 +387,58 @@ static char *json_tail_request(const char *path, int max_bytes)
     return json;
 }
 
+static char *json_memory_search_request(const char *query, int max_results)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return NULL;
+    }
+    cJSON_AddStringToObject(obj, "query", query ? query : "");
+    cJSON_AddNumberToObject(obj, "max_results", max_results > 0 ? max_results : 12);
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
+
+static char *json_memory_summarize_request(int days)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return NULL;
+    }
+    cJSON_AddNumberToObject(obj, "days", days > 0 ? days : 7);
+    cJSON_AddBoolToObject(obj, "include_sessions", true);
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
+
+static char *json_memory_export_request(void)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return NULL;
+    }
+    cJSON_AddBoolToObject(obj, "include_sessions", true);
+    cJSON_AddNumberToObject(obj, "max_bytes", 24576);
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
+
+static char *json_session_cleanup_request(int days, bool dry_run)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return NULL;
+    }
+    cJSON_AddNumberToObject(obj, "older_than_days", days >= 0 ? days : 30);
+    cJSON_AddBoolToObject(obj, "dry_run", dry_run);
+    char *json = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+    return json;
+}
+
 static void telegram_send_help(const char *chat_id)
 {
     telegram_send_message(chat_id,
@@ -397,10 +449,16 @@ static void telegram_send_help(const char *chat_id)
         "/tasks - list scheduled tasks\n"
         "/remove_task <id> - remove a scheduled task\n"
         "/memory - show long-term memory\n"
+        "/summary - show memory summary\n"
         "/today - show today's daily memory\n"
         "/remember <note> - append a daily memory note\n"
+        "/search_memory <query> - search memory and sessions\n"
+        "/summarize_memory [days] - refresh memory summary\n"
+        "/export_memory - export memory backup\n"
+        "/cleanup_sessions [days] [apply] - preview/apply old session cleanup\n"
         "/files [prefix] - list SPIFFS files\n"
         "/tail <path> [bytes] - show the end of a SPIFFS file\n"
+        "/logs [path] [bytes] - tail a SPIFFS log file\n"
         "/heartbeat - run heartbeat check now\n"
         "/forget - clear this chat session\n\n"
         "Send any normal message to chat with the AI agent.");
@@ -487,6 +545,17 @@ static bool handle_builtin_command(const char *chat_id, const char *text)
         return true;
     }
 
+    if (telegram_command_matches(text, "/summary", &args)) {
+        char *json = json_with_string_field("path", MIMI_MEMORY_SUMMARY_FILE);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "read_file", json, 4096);
+        free(json);
+        return true;
+    }
+
     if (telegram_command_matches(text, "/today", &args)) {
         char *recent = calloc(1, 4096);
         if (!recent) {
@@ -521,6 +590,77 @@ static bool handle_builtin_command(const char *chat_id, const char *text)
         return true;
     }
 
+    if (telegram_command_matches(text, "/search_memory", &args)) {
+        if (!args || args[0] == '\0') {
+            telegram_send_message(chat_id, "Usage: /search_memory <query>");
+            return true;
+        }
+
+        char *json = json_memory_search_request(args, 12);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "memory_search", json, 4096);
+        free(json);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/summarize_memory", &args)) {
+        int days = 7;
+        if (args && args[0]) {
+            int requested = atoi(args);
+            if (requested > 0) {
+                days = requested;
+            }
+        }
+
+        char *json = json_memory_summarize_request(days);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "memory_summarize", json, 1024);
+        free(json);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/export_memory", &args)) {
+        char *json = json_memory_export_request();
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "memory_export", json, 1024);
+        free(json);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/cleanup_sessions", &args)) {
+        char days_arg[16];
+        const char *rest = telegram_read_token(args, days_arg, sizeof(days_arg));
+        int days = 30;
+        if (days_arg[0]) {
+            int requested = atoi(days_arg);
+            if (requested >= 0) {
+                days = requested;
+            }
+        }
+        bool dry_run = true;
+        if (rest && strncmp(rest, "apply", 5) == 0) {
+            dry_run = false;
+        }
+
+        char *json = json_session_cleanup_request(days, dry_run);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "session_cleanup", json, 4096);
+        free(json);
+        return true;
+    }
+
     if (telegram_command_matches(text, "/files", &args)) {
         if (!args || args[0] == '\0') {
             telegram_send_tool_result(chat_id, "list_dir", "{}", 4096);
@@ -543,6 +683,31 @@ static bool handle_builtin_command(const char *chat_id, const char *text)
         if (path[0] == '\0') {
             telegram_send_message(chat_id, "Usage: /tail <path> [bytes]");
             return true;
+        }
+
+        int max_bytes = 2048;
+        if (rest && rest[0]) {
+            int requested = atoi(rest);
+            if (requested > 0) {
+                max_bytes = requested;
+            }
+        }
+
+        char *json = json_tail_request(path, max_bytes);
+        if (!json) {
+            telegram_send_message(chat_id, "Out of memory while building request.");
+            return true;
+        }
+        telegram_send_tool_result(chat_id, "tail_file", json, 4096);
+        free(json);
+        return true;
+    }
+
+    if (telegram_command_matches(text, "/logs", &args)) {
+        char path[160];
+        const char *rest = telegram_read_token(args, path, sizeof(path));
+        if (path[0] == '\0') {
+            strlcpy(path, MIMI_SPIFFS_BASE "/logs/mimi.log", sizeof(path));
         }
 
         int max_bytes = 2048;

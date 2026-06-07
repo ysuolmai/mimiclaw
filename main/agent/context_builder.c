@@ -48,6 +48,10 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
         "- edit_file: Find-and-replace edit a file.\n"
         "- list_dir: List files, optionally filter by prefix.\n"
         "- memory_append: Append a short note to today's daily memory.\n"
+        "- memory_search: Search long-term memory, daily notes, summaries, and sessions.\n"
+        "- memory_summarize: Refresh the on-device memory summary file.\n"
+        "- memory_export: Export memory and sessions to a backup markdown file.\n"
+        "- session_cleanup: Preview or delete old saved chat sessions.\n"
         "- cron_add: Schedule a recurring or one-shot task. The message will trigger an agent turn when the job fires.\n"
         "- cron_list: List all scheduled cron jobs.\n"
         "- cron_remove: Remove a scheduled cron job by ID.\n"
@@ -64,11 +68,16 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
         "## Memory\n"
         "You have persistent memory stored on local flash:\n"
         "- Long-term memory: " MIMI_SPIFFS_MEMORY_DIR "/MEMORY.md\n"
-        "- Daily notes: " MIMI_SPIFFS_MEMORY_DIR "/daily/<YYYY-MM-DD>.md\n\n"
+        "- On-device summary: " MIMI_SPIFFS_MEMORY_DIR "/SUMMARY.md\n"
+        "- Daily notes: " MIMI_SPIFFS_MEMORY_DIR "/<YYYY-MM-DD>.md\n\n"
         "IMPORTANT: Actively use memory to remember things across conversations.\n"
         "- When you learn something new about the user (name, preferences, habits, context), write it to MEMORY.md.\n"
         "- When something noteworthy happens in a conversation, append it to today's daily note.\n"
         "- Use memory_append for daily notes and logs. Always read_file MEMORY.md before writing, so you can edit_file to update without losing existing content.\n"
+        "- Use memory_search before claiming you do or do not remember something.\n"
+        "- Use memory_summarize after major memory changes or long conversations to keep SUMMARY.md current.\n"
+        "- Use memory_export when the user asks for a backup, migration, or full memory dump.\n"
+        "- Use session_cleanup with dry_run=true before deleting old sessions.\n"
         "- Use get_current_time to know today's date before writing daily notes.\n"
         "- Keep MEMORY.md concise and organized — summarize, don't dump raw conversation.\n"
         "- You should proactively save memory without being asked. If the user tells you their name, preferences, or important facts, persist them immediately.\n\n"
@@ -86,6 +95,9 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
     if (memory_read_long_term(mem_buf, sizeof(mem_buf)) == ESP_OK && mem_buf[0]) {
         off += snprintf(buf + off, size - off, "\n## Long-term Memory\n\n%s\n", mem_buf);
     }
+
+    /* On-device memory summary */
+    off = append_file(buf, size, off, MIMI_MEMORY_SUMMARY_FILE, "Memory Summary");
 
     /* Recent daily notes (last 3 days) */
     char recent_buf[4096];

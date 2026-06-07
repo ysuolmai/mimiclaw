@@ -14,7 +14,7 @@
 
 static const char *TAG = "tools";
 
-#define MAX_TOOLS 24
+#define MAX_TOOLS 32
 
 static mimi_tool_t s_tools[MAX_TOOLS];
 static int s_tool_count = 0;
@@ -184,6 +184,54 @@ esp_err_t tool_registry_init(void)
         .execute = tool_memory_append_execute,
     };
     register_tool(&ma);
+
+    mimi_tool_t ms = {
+        .name = "memory_search",
+        .description = "Search long-term memory, daily notes, summary, and session history for a query.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Search text\"},"
+            "\"max_results\":{\"type\":\"integer\",\"description\":\"Maximum matches to return. Default 12\"}},"
+            "\"required\":[\"query\"]}",
+        .execute = tool_memory_search_execute,
+    };
+    register_tool(&ms);
+
+    mimi_tool_t me = {
+        .name = "memory_export",
+        .description = "Export memory and optional session files to " MIMI_SPIFFS_MEMORY_DIR "/BACKUP.md.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"include_sessions\":{\"type\":\"boolean\",\"description\":\"Include session JSONL files. Default true\"},"
+            "\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum backup size budget. Default 24576\"}},"
+            "\"required\":[]}",
+        .execute = tool_memory_export_execute,
+    };
+    register_tool(&me);
+
+    mimi_tool_t mz = {
+        .name = "memory_summarize",
+        .description = "Build or refresh " MIMI_SPIFFS_MEMORY_DIR "/SUMMARY.md from long-term memory, recent notes, and sessions.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"days\":{\"type\":\"integer\",\"description\":\"Number of recent daily note days to summarize. Default 7\"},"
+            "\"include_sessions\":{\"type\":\"boolean\",\"description\":\"Include a session digest. Default true\"}},"
+            "\"required\":[]}",
+        .execute = tool_memory_summarize_execute,
+    };
+    register_tool(&mz);
+
+    mimi_tool_t sc = {
+        .name = "session_cleanup",
+        .description = "Dry-run or delete old Telegram session JSONL files from SPIFFS.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"older_than_days\":{\"type\":\"integer\",\"description\":\"Delete sessions older than this many days. Default 30\"},"
+            "\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview only when true. Default true\"}},"
+            "\"required\":[]}",
+        .execute = tool_session_cleanup_execute,
+    };
+    register_tool(&sc);
 
     /* Register cron_add */
     mimi_tool_t ca = {

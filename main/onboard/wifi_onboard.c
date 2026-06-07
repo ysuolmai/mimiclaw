@@ -190,6 +190,26 @@ static char *json_tail_request(const char *path, int max_bytes)
     return json;
 }
 
+static void read_text_file_or_empty(const char *path, char *buf, size_t size)
+{
+    if (!buf || size == 0) {
+        return;
+    }
+    buf[0] = '\0';
+    if (!path) {
+        return;
+    }
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        return;
+    }
+
+    size_t n = fread(buf, 1, size - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+}
+
 static void json_add_effective_config(cJSON *root, const char *json_key,
                                       const char *ns, const char *nvs_key,
                                       const char *build_val)
@@ -538,20 +558,24 @@ static esp_err_t http_get_api_memory(httpd_req_t *req)
 {
     char *long_term = calloc(1, 4096);
     char *recent = calloc(1, 4096);
-    if (!long_term || !recent) {
+    char *summary = calloc(1, 4096);
+    if (!long_term || !recent || !summary) {
         free(long_term);
         free(recent);
+        free(summary);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
         return ESP_FAIL;
     }
 
     memory_read_long_term(long_term, 4096);
     memory_read_recent(recent, 4096, 3);
+    read_text_file_or_empty(MIMI_MEMORY_SUMMARY_FILE, summary, 4096);
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
         free(long_term);
         free(recent);
+        free(summary);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
         return ESP_FAIL;
     }
@@ -559,10 +583,12 @@ static esp_err_t http_get_api_memory(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "ok", true);
     cJSON_AddStringToObject(root, "long_term", long_term);
     cJSON_AddStringToObject(root, "recent", recent);
+    cJSON_AddStringToObject(root, "summary", summary);
     esp_err_t ret = http_send_json_object(req, root);
     cJSON_Delete(root);
     free(long_term);
     free(recent);
+    free(summary);
     return ret;
 }
 
@@ -575,10 +601,43 @@ static esp_err_t http_post_api_memory(httpd_req_t *req)
     }
 
     cJSON *root = cJSON_Parse(body);
-    free(body);
     if (!root) {
+        free(body);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
         return ESP_FAIL;
+    }
+
+    const char *action = cJSON_GetStringValue(cJSON_GetObjectItem(root, "action"));
+    if (action && action[0]) {
+        const char *tool = NULL;
+        size_t output_size = 2048;
+
+        if (strcmp(action, "search") == 0) {
+            tool = "memory_search";
+            output_size = 4096;
+        } else if (strcmp(action, "summarize") == 0) {
+            tool = "memory_summarize";
+        } else if (strcmp(action, "export") == 0) {
+            tool = "memory_export";
+        } else if (strcmp(action, "cleanup_sessions") == 0) {
+            tool = "session_cleanup";
+            output_size = 4096;
+        } else if (strcmp(action, "tail_log") == 0) {
+            tool = "tail_file";
+            output_size = 4096;
+        }
+
+        if (!tool) {
+            cJSON_Delete(root);
+            free(body);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown memory action");
+            return ESP_FAIL;
+        }
+
+        esp_err_t ret = http_send_tool_result(req, tool, body, output_size);
+        cJSON_Delete(root);
+        free(body);
+        return ret;
     }
 
     const char *note = cJSON_GetStringValue(cJSON_GetObjectItem(root, "note"));
@@ -595,6 +654,7 @@ static esp_err_t http_post_api_memory(httpd_req_t *req)
     }
 
     cJSON_Delete(root);
+    free(body);
     return http_send_text_result(req, err == ESP_OK, message);
 }
 
