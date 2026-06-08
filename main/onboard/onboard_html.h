@@ -68,6 +68,8 @@ static const char ONBOARD_HTML[] =
 "<input id='api_key' type='password' placeholder='sk-...'>"
 "<label>Model</label>"
 "<input id='model' placeholder='claude-opus-4-5' value='claude-opus-4-5'>"
+"<label>OpenAI-compatible Base URL</label>"
+"<input id='base_url' placeholder='https://api.openai.com/v1 or https://third-party.example/v1'>"
 "<label>Provider</label>"
 "<select id='provider'>"
 "<option value='anthropic'>Anthropic</option>"
@@ -221,7 +223,7 @@ static const char ONBOARD_HTML[] =
 "function voiceStreamStop(){apiPost('/api/voice',{action:'stream_stop'},'voice_out')}"
 "function loadConfig(){fetch('/config').then(r=>r.json()).then(cfg=>{Object.keys(cfg).forEach(k=>{var el=$(k);if(el&&cfg[k]!==undefined&&cfg[k]!==null){el.value=cfg[k]}})}).catch(()=>{})}"
 "function scan(ev){var btn=ev&&ev.target?ev.target:event.target;btn.textContent='Scanning...';btn.disabled=true;fetch('/scan').then(r=>r.json()).then(list=>{var el=$('ap-list');el.style.display='block';el.innerHTML='';list.forEach(ap=>{var d=document.createElement('div');d.className='ap-item';d.innerHTML='<span>'+(ap.auth?'<span class=ap-lock></span>':'')+ap.ssid+'</span><span class=ap-rssi>'+ap.rssi+' dBm</span>';d.onclick=function(){$('ssid').value=ap.ssid};el.appendChild(d)});btn.textContent='Scan WiFi Networks';btn.disabled=false}).catch(()=>{btn.textContent='Scan WiFi Networks';btn.disabled=false})}"
-"function saveConfig(){var fields=['ssid','password','api_key','model','provider','tg_token','feishu_app_id','feishu_app_secret','proxy_host','proxy_port','proxy_type','search_key','tavily_key','voice_stream_url','voice_codec'];var data={};fields.forEach(f=>{data[f]=$(f).value.trim()});$('save_status').style.display='block';fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{$('save_status').textContent='Saved! Restarting...'}).catch(()=>{$('save_status').textContent='Error. Please try again.'})}"
+"function saveConfig(){var fields=['ssid','password','api_key','model','provider','base_url','tg_token','feishu_app_id','feishu_app_secret','proxy_host','proxy_port','proxy_type','search_key','tavily_key','voice_stream_url','voice_codec'];var data={};fields.forEach(f=>{data[f]=$(f).value.trim()});$('save_status').style.display='block';fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{$('save_status').textContent='Saved! Restarting...'}).catch(()=>{$('save_status').textContent='Error. Please try again.'})}"
 "loadConfig();refreshStatus();"
 "</script>"
 "</body></html>";

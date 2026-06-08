@@ -87,6 +87,7 @@ Use the Web Admin page to configure:
 - LLM provider: `anthropic` or `openai`
 - API key
 - model name
+- custom OpenAI-compatible Base URL, optional
 - Telegram Bot token
 - proxy settings, if needed
 - Tavily or Brave Search API key, optional
@@ -105,6 +106,28 @@ LLM Configuration
 API Key:  sk-ant-... or sk-...
 Provider: anthropic or openai
 Model:    claude-opus-4-5, gpt-4o, or another supported model
+Base URL: optional; use this for third-party OpenAI-compatible providers
+```
+
+For a third-party OpenAI-compatible key, use:
+
+```text
+Provider: openai
+API Key:  your third-party key
+Model:    the exact model id from your provider
+Base URL: https://your-provider.example/v1
+```
+
+You can also paste a full endpoint:
+
+```text
+https://your-provider.example/v1/chat/completions
+```
+
+If Base URL is empty, MimiClaw uses the official OpenAI endpoint:
+
+```text
+https://api.openai.com/v1/chat/completions
 ```
 
 Build-time defaults are also supported. Copy the example file:
@@ -122,6 +145,7 @@ Then edit:
 #define MIMI_SECRET_API_KEY         "sk-ant-api03-..."
 #define MIMI_SECRET_MODEL           "claude-opus-4-5"
 #define MIMI_SECRET_MODEL_PROVIDER  "anthropic"
+#define MIMI_SECRET_LLM_BASE_URL    ""
 #define MIMI_SECRET_VOICE_STREAM_URL "ws://192.168.1.10:8765/mimi"
 ```
 
@@ -146,6 +170,7 @@ mimi> set_tg_token 123456:ABC...
 mimi> set_api_key sk-ant-api03-...
 mimi> set_model_provider anthropic
 mimi> set_model claude-opus-4-5
+mimi> set_base_url https://your-provider.example/v1
 mimi> config_show
 mimi> config_reset
 ```
@@ -450,6 +475,7 @@ mimi> set_tg_token 123456:ABC...   # change Telegram bot token
 mimi> set_api_key sk-ant-api03-... # change API key (Anthropic or OpenAI)
 mimi> set_model_provider openai    # switch provider (anthropic|openai)
 mimi> set_model gpt-4o             # change LLM model
+mimi> set_base_url https://your-provider.example/v1  # OpenAI-compatible base URL
 mimi> set_proxy 127.0.0.1 7897  # set HTTP proxy
 mimi> clear_proxy                  # remove proxy
 mimi> set_search_key BSA...        # set Brave Search API key

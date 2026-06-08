@@ -27,6 +27,12 @@ esp_err_t llm_set_provider(const char *provider);
  */
 esp_err_t llm_set_model(const char *model);
 
+/**
+ * Save the OpenAI-compatible base URL to NVS.
+ * Empty string reverts to the built-in provider default.
+ */
+esp_err_t llm_set_base_url(const char *base_url);
+
 /* ── Tool Use Support ──────────────────────────────────────────── */
 
 typedef struct {
