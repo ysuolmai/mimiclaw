@@ -15,7 +15,7 @@
 
 static const char *TAG = "tools";
 
-#define MAX_TOOLS 32
+#define MAX_TOOLS 40
 
 static mimi_tool_t s_tools[MAX_TOOLS];
 static int s_tool_count = 0;
@@ -284,6 +284,55 @@ esp_err_t tool_registry_init(void)
         .execute = tool_voice_play_execute,
     };
     register_tool(&vp);
+
+#if MIMI_ENABLE_VOICE_STREAM
+    mimi_tool_t vss = {
+        .name = "voice_stream_status",
+        .description = "Get Xiaozhi-style streaming voice status, WebSocket URL, codec, sample rates, and activity state.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{},"
+            "\"required\":[]}",
+        .execute = tool_voice_stream_status_execute,
+    };
+    register_tool(&vss);
+
+    mimi_tool_t vsc = {
+        .name = "voice_stream_config",
+        .description = "Configure the streaming voice WebSocket endpoint and codec. Use pcm16 for sherpa-onnx bridge servers.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"Voice stream WebSocket URL, e.g. ws://192.168.1.10:8765/mimi\"},"
+            "\"codec\":{\"type\":\"string\",\"description\":\"Audio codec: pcm16 now, opus reserved\"}},"
+            "\"required\":[]}",
+        .execute = tool_voice_stream_config_execute,
+    };
+    register_tool(&vsc);
+
+    mimi_tool_t vst = {
+        .name = "voice_stream_start",
+        .description = "Start a Xiaozhi-style streaming voice turn. Sends hello JSON, then binary PCM frames over WebSocket.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"seconds\":{\"type\":\"integer\",\"description\":\"Maximum capture duration, default 10, capped by firmware\"}},"
+            "\"required\":[]}",
+        .execute = tool_voice_stream_start_execute,
+    };
+    register_tool(&vst);
+
+    mimi_tool_t vsp = {
+        .name = "voice_stream_stop",
+        .description = "Stop the active streaming voice turn.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{},"
+            "\"required\":[]}",
+        .execute = tool_voice_stream_stop_execute,
+    };
+    register_tool(&vsp);
+#else
+    ESP_LOGI(TAG, "voice stream tools disabled in this target profile");
+#endif
 #else
     ESP_LOGI(TAG, "hardware voice tools disabled in this target profile");
 #endif

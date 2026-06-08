@@ -16,8 +16,8 @@ This fork targets the ESP32-S3 Super Mini / ESP32-S3FH4R2 profile used by `ysuol
 | --- | --- | --- |
 | `0x9000` | 24 KB | `nvs` |
 | `0xF000` | 4 KB | `phy_init` |
-| `0x20000` | 3200 KB | `factory` |
-| `0x340000` | 704 KB | `spiffs` |
+| `0x20000` | 2880 KB | `factory` |
+| `0x2F0000` | 1024 KB | `spiffs` |
 | `0x3F0000` | 64 KB | `coredump` |
 
 ## Build
@@ -40,5 +40,5 @@ esptool.py --chip esp32s3 -b 460800 write_flash 0x0 mimiclaw-esp32-s3-supermini-
 The same artifact also includes `spiffs.bin`. Flash it only when you want to initialize or reset the SPIFFS partition:
 
 ```bash
-esptool.py --chip esp32s3 -b 460800 write_flash 0x340000 spiffs.bin
+esptool.py --chip esp32s3 -b 460800 write_flash 0x2F0000 spiffs.bin
 ```

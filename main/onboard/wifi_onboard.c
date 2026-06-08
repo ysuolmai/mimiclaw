@@ -415,6 +415,8 @@ static esp_err_t http_get_config(httpd_req_t *req)
     json_add_effective_config(root, "proxy_type", MIMI_NVS_PROXY, MIMI_NVS_KEY_PROXY_TYPE, MIMI_SECRET_PROXY_TYPE);
     json_add_effective_config(root, "search_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_API_KEY, MIMI_SECRET_SEARCH_KEY);
     json_add_effective_config(root, "tavily_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_TAVILY_KEY, MIMI_SECRET_TAVILY_KEY);
+    json_add_effective_config(root, "voice_stream_url", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_STREAM_URL, MIMI_SECRET_VOICE_STREAM_URL);
+    json_add_effective_config(root, "voice_codec", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_CODEC, MIMI_VOICE_STREAM_DEFAULT_CODEC);
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -685,6 +687,14 @@ static esp_err_t http_post_api_voice(httpd_req_t *req)
         tool = "voice_record";
     } else if (action && strcmp(action, "play") == 0) {
         tool = "voice_play";
+    } else if (action && strcmp(action, "stream_status") == 0) {
+        tool = "voice_stream_status";
+    } else if (action && strcmp(action, "stream_config") == 0) {
+        tool = "voice_stream_config";
+    } else if (action && strcmp(action, "stream_start") == 0) {
+        tool = "voice_stream_start";
+    } else if (action && strcmp(action, "stream_stop") == 0) {
+        tool = "voice_stream_stop";
     }
 
     if (!tool) {
@@ -829,6 +839,10 @@ static esp_err_t http_post_save(httpd_req_t *req)
     /* Search */
     nvs_sync_field(root, "search_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_API_KEY);
     nvs_sync_field(root, "tavily_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_TAVILY_KEY);
+
+    /* Voice stream */
+    nvs_sync_field(root, "voice_stream_url", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_STREAM_URL);
+    nvs_sync_field(root, "voice_codec", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_CODEC);
 
     cJSON_Delete(root);
 

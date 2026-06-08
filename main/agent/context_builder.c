@@ -30,7 +30,11 @@ static const char *TAG = "context";
         "- voice_status: Check I2S hardware voice module status and pins.\n" \
         "- voice_beep: Play a test tone through the I2S speaker amplifier.\n" \
         "- voice_record: Record a mono 16kHz WAV file from the I2S microphone.\n" \
-        "- voice_play: Play a mono 16kHz WAV file through the I2S speaker amplifier.\n"
+        "- voice_play: Play a mono 16kHz/24kHz WAV file through the I2S speaker amplifier.\n" \
+        "- voice_stream_status: Check the WebSocket streaming voice endpoint and activity state.\n" \
+        "- voice_stream_config: Configure Xiaozhi-style streaming voice server URL and codec.\n" \
+        "- voice_stream_start: Start a streaming voice turn to the configured server.\n" \
+        "- voice_stream_stop: Stop the active streaming voice turn.\n"
 #else
 #define MIMI_PROMPT_VOICE_TOOLS ""
 #endif

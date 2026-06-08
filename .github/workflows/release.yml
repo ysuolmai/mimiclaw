@@ -71,7 +71,7 @@ jobs:
               0x0      bootloader-esp32-s3-supermini-${{ github.ref_name }}.bin \
               0x8000   partition-table-esp32-s3-supermini-${{ github.ref_name }}.bin \
               0x20000  mimiclaw-esp32-s3-supermini-${{ github.ref_name }}.bin \
-              0x340000 spiffs-esp32-s3-supermini-${{ github.ref_name }}.bin
+              0x2F0000 spiffs-esp32-s3-supermini-${{ github.ref_name }}.bin
             ```
 
             ### 3. First-time setup

@@ -48,6 +48,9 @@
 #ifndef MIMI_SECRET_TAVILY_KEY
 #define MIMI_SECRET_TAVILY_KEY      ""
 #endif
+#ifndef MIMI_SECRET_VOICE_STREAM_URL
+#define MIMI_SECRET_VOICE_STREAM_URL ""
+#endif
 
 /* Target feature profile */
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
@@ -70,6 +73,9 @@
 #endif
 #ifndef MIMI_ENABLE_VOICE_HW
 #define MIMI_ENABLE_VOICE_HW         (!MIMI_TARGET_C3_LITE)
+#endif
+#ifndef MIMI_ENABLE_VOICE_STREAM
+#define MIMI_ENABLE_VOICE_STREAM     (!MIMI_TARGET_C3_LITE)
 #endif
 
 /* WiFi */
@@ -173,18 +179,29 @@
 #define MIMI_GPIO_CONFIG_SECTION     1   /* enable GPIO tools */
 
 /* Hardware voice (ESP32-S3 profile).
- * Default pins target common I2S modules:
- * - INMP441/SPH0645 microphone: BCLK, WS, DIN
- * - MAX98357A speaker amp: BCLK, WS, DOUT
+ * Pins match the Xiaozhi ESP32-S3 Super Mini board config:
+ * - INMP441/SPH0645 microphone: WS GPIO4, SCK GPIO5, SD GPIO6
+ * - MAX98357A speaker amp: DIN GPIO11, BCLK GPIO12, LRC GPIO13
  */
-#define MIMI_VOICE_I2S_BCLK_GPIO     4
-#define MIMI_VOICE_I2S_WS_GPIO       5
-#define MIMI_VOICE_I2S_DIN_GPIO      6
-#define MIMI_VOICE_I2S_DOUT_GPIO     7
-#define MIMI_VOICE_SAMPLE_RATE       16000
+#define MIMI_VOICE_MIC_WS_GPIO       4
+#define MIMI_VOICE_MIC_SCK_GPIO      5
+#define MIMI_VOICE_MIC_DIN_GPIO      6
+#define MIMI_VOICE_SPK_DOUT_GPIO     11
+#define MIMI_VOICE_SPK_BCLK_GPIO     12
+#define MIMI_VOICE_SPK_LRCK_GPIO     13
+#define MIMI_VOICE_INPUT_SAMPLE_RATE 16000
+#define MIMI_VOICE_OUTPUT_SAMPLE_RATE 24000
+#define MIMI_VOICE_SAMPLE_RATE       MIMI_VOICE_INPUT_SAMPLE_RATE
 #define MIMI_VOICE_BITS_PER_SAMPLE   16
-#define MIMI_VOICE_MAX_RECORD_SECONDS 10
+#define MIMI_VOICE_MAX_RECORD_SECONDS 30
 #define MIMI_VOICE_DEFAULT_FILE      MIMI_SPIFFS_BASE "/voice_last.wav"
+#define MIMI_VOICE_TTS_FILE          MIMI_SPIFFS_BASE "/voice_tts.wav"
+#define MIMI_VOICE_STREAM_DEFAULT_CODEC "pcm16"
+#define MIMI_VOICE_STREAM_FRAME_MS   60
+#define MIMI_VOICE_STREAM_MAX_SECONDS 60
+#define MIMI_VOICE_STREAM_STACK      (12 * 1024)
+#define MIMI_VOICE_STREAM_PRIO       5
+#define MIMI_VOICE_STREAM_CORE       0
 
 /* Skills */
 #define MIMI_SKILLS_PREFIX           MIMI_SPIFFS_BASE "/skills/"
@@ -209,6 +226,7 @@
 #define MIMI_NVS_LLM                 "llm_config"
 #define MIMI_NVS_PROXY               "proxy_config"
 #define MIMI_NVS_SEARCH              "search_config"
+#define MIMI_NVS_VOICE               "voice_config"
 
 /* NVS Keys */
 #define MIMI_NVS_KEY_SSID            "ssid"
@@ -223,6 +241,8 @@
 #define MIMI_NVS_KEY_PROXY_HOST      "host"
 #define MIMI_NVS_KEY_PROXY_PORT      "port"
 #define MIMI_NVS_KEY_PROXY_TYPE      "proxy_type"
+#define MIMI_NVS_KEY_VOICE_STREAM_URL "stream_url"
+#define MIMI_NVS_KEY_VOICE_CODEC     "codec"
 
 /* WiFi Onboarding (Captive Portal) */
 #define MIMI_ONBOARD_AP_PREFIX    "MimiClaw-"

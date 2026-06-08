@@ -27,6 +27,7 @@
 #include "skills/skill_loader.h"
 #include "onboard/wifi_onboard.h"
 #include "voice/voice_hw.h"
+#include "voice/voice_stream.h"
 
 static const char *TAG = "mimi";
 
@@ -141,6 +142,7 @@ void app_main(void)
 #endif
     ESP_ERROR_CHECK(llm_proxy_init());
     ESP_ERROR_CHECK(voice_hw_init());
+    ESP_ERROR_CHECK(voice_stream_init());
     ESP_ERROR_CHECK(tool_registry_init());
     ESP_ERROR_CHECK(cron_service_init());
     ESP_ERROR_CHECK(heartbeat_init());

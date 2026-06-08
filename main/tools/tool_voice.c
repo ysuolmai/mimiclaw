@@ -1,6 +1,7 @@
 #include "tools/tool_voice.h"
 #include "mimi_config.h"
 #include "voice/voice_hw.h"
+#include "voice/voice_stream.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -96,5 +97,68 @@ esp_err_t tool_voice_play_execute(const char *input_json, char *output, size_t o
     snprintf(output, output_size, "%s: played WAV from %s",
              err == ESP_OK ? "OK" : "Error", path);
     cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t tool_voice_stream_status_execute(const char *input_json, char *output, size_t output_size)
+{
+    (void)input_json;
+    voice_stream_status_t st;
+    voice_stream_get_status(&st);
+    snprintf(output, output_size,
+             "Voice stream\n"
+             "- enabled: %s\n"
+             "- configured: %s\n"
+             "- active: %s\n"
+             "- connected: %s\n"
+             "- url: %s\n"
+             "- codec: %s\n"
+             "- input_sample_rate: %d\n"
+             "- output_sample_rate: %d\n"
+             "- frame_ms: %d\n"
+             "- max_seconds: %d\n",
+             MIMI_ENABLE_VOICE_STREAM ? "yes" : "no",
+             st.configured ? "yes" : "no",
+             st.active ? "yes" : "no",
+             st.connected ? "yes" : "no",
+             st.url,
+             st.codec,
+             st.input_sample_rate,
+             st.output_sample_rate,
+             st.frame_ms,
+             st.max_seconds);
+    return MIMI_ENABLE_VOICE_STREAM ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t tool_voice_stream_config_execute(const char *input_json, char *output, size_t output_size)
+{
+    cJSON *root = parse_input_or_empty(input_json, output, output_size);
+    if (!root) return ESP_ERR_INVALID_ARG;
+
+    const char *url = json_string(root, "url", "");
+    const char *codec = json_string(root, "codec", MIMI_VOICE_STREAM_DEFAULT_CODEC);
+    esp_err_t err = voice_stream_set_config(url, codec);
+    snprintf(output, output_size, "%s: voice stream config url=%s codec=%s",
+             err == ESP_OK ? "OK" : "Error", url, codec);
+    cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t tool_voice_stream_start_execute(const char *input_json, char *output, size_t output_size)
+{
+    cJSON *root = parse_input_or_empty(input_json, output, output_size);
+    if (!root) return ESP_ERR_INVALID_ARG;
+
+    int seconds = json_int(root, "seconds", 10);
+    esp_err_t err = voice_stream_start(seconds, output, output_size);
+    cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t tool_voice_stream_stop_execute(const char *input_json, char *output, size_t output_size)
+{
+    (void)input_json;
+    esp_err_t err = voice_stream_stop();
+    snprintf(output, output_size, "%s: voice stream stop requested", err == ESP_OK ? "OK" : "Error");
     return err;
 }

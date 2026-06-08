@@ -26,6 +26,7 @@ idf_component_register(
         "tools/tool_voice.c"
         "tools/gpio_policy.c"
         "voice/voice_hw.c"
+        "voice/voice_stream.c"
         "skills/skill_loader.c"
         "onboard/wifi_onboard.c"
     INCLUDE_DIRS

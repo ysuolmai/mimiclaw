@@ -124,6 +124,13 @@ static void rx_disable(void)
     }
 }
 
+static int clamp_sample(int value)
+{
+    if (value > 32767) return 32767;
+    if (value < -32768) return -32768;
+    return value;
+}
+
 esp_err_t voice_hw_init(void)
 {
     if (s_initialized) {
@@ -137,26 +144,37 @@ esp_err_t voice_hw_init(void)
         return ESP_OK;
     }
 
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
-    chan_cfg.dma_desc_num = 6;
-    chan_cfg.dma_frame_num = VOICE_CHUNK_SAMPLES;
+    i2s_chan_config_t tx_chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    tx_chan_cfg.dma_desc_num = 6;
+    tx_chan_cfg.dma_frame_num = VOICE_CHUNK_SAMPLES;
 
-    esp_err_t err = i2s_new_channel(&chan_cfg, &s_tx_chan, &s_rx_chan);
+    esp_err_t err = i2s_new_channel(&tx_chan_cfg, &s_tx_chan, NULL);
     if (err != ESP_OK) {
         s_last_error = err;
-        ESP_LOGE(TAG, "i2s_new_channel failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "i2s tx channel failed: %s", esp_err_to_name(err));
         return err;
     }
 
-    i2s_std_config_t std_cfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MIMI_VOICE_SAMPLE_RATE),
+    i2s_chan_config_t rx_chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    rx_chan_cfg.dma_desc_num = 6;
+    rx_chan_cfg.dma_frame_num = VOICE_CHUNK_SAMPLES;
+
+    err = i2s_new_channel(&rx_chan_cfg, NULL, &s_rx_chan);
+    if (err != ESP_OK) {
+        s_last_error = err;
+        ESP_LOGE(TAG, "i2s rx channel failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    i2s_std_config_t tx_std_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MIMI_VOICE_OUTPUT_SAMPLE_RATE),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
-            .bclk = MIMI_VOICE_I2S_BCLK_GPIO,
-            .ws = MIMI_VOICE_I2S_WS_GPIO,
-            .dout = MIMI_VOICE_I2S_DOUT_GPIO,
-            .din = MIMI_VOICE_I2S_DIN_GPIO,
+            .bclk = MIMI_VOICE_SPK_BCLK_GPIO,
+            .ws = MIMI_VOICE_SPK_LRCK_GPIO,
+            .dout = MIMI_VOICE_SPK_DOUT_GPIO,
+            .din = I2S_GPIO_UNUSED,
             .invert_flags = {
                 .mclk_inv = false,
                 .bclk_inv = false,
@@ -165,10 +183,25 @@ esp_err_t voice_hw_init(void)
         },
     };
 
-    err = i2s_channel_init_std_mode(s_tx_chan, &std_cfg);
-    if (err == ESP_OK) {
-        err = i2s_channel_init_std_mode(s_rx_chan, &std_cfg);
-    }
+    i2s_std_config_t rx_std_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MIMI_VOICE_INPUT_SAMPLE_RATE),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,
+            .bclk = MIMI_VOICE_MIC_SCK_GPIO,
+            .ws = MIMI_VOICE_MIC_WS_GPIO,
+            .dout = I2S_GPIO_UNUSED,
+            .din = MIMI_VOICE_MIC_DIN_GPIO,
+            .invert_flags = {
+                .mclk_inv = false,
+                .bclk_inv = false,
+                .ws_inv = false,
+            },
+        },
+    };
+
+    err = i2s_channel_init_std_mode(s_tx_chan, &tx_std_cfg);
+    if (err == ESP_OK) err = i2s_channel_init_std_mode(s_rx_chan, &rx_std_cfg);
     if (err != ESP_OK) {
         s_last_error = err;
         ESP_LOGE(TAG, "i2s std init failed: %s", esp_err_to_name(err));
@@ -178,12 +211,15 @@ esp_err_t voice_hw_init(void)
     s_ready = true;
     s_last_error = ESP_OK;
     ESP_LOGI(TAG,
-             "hardware voice ready: bclk=%d ws=%d din=%d dout=%d rate=%d",
-             MIMI_VOICE_I2S_BCLK_GPIO,
-             MIMI_VOICE_I2S_WS_GPIO,
-             MIMI_VOICE_I2S_DIN_GPIO,
-             MIMI_VOICE_I2S_DOUT_GPIO,
-             MIMI_VOICE_SAMPLE_RATE);
+             "hardware voice ready: mic ws=%d sck=%d din=%d rate=%d, speaker dout=%d bclk=%d lrck=%d rate=%d",
+             MIMI_VOICE_MIC_WS_GPIO,
+             MIMI_VOICE_MIC_SCK_GPIO,
+             MIMI_VOICE_MIC_DIN_GPIO,
+             MIMI_VOICE_INPUT_SAMPLE_RATE,
+             MIMI_VOICE_SPK_DOUT_GPIO,
+             MIMI_VOICE_SPK_BCLK_GPIO,
+             MIMI_VOICE_SPK_LRCK_GPIO,
+             MIMI_VOICE_OUTPUT_SAMPLE_RATE);
     return ESP_OK;
 }
 
@@ -203,23 +239,29 @@ void voice_hw_status(char *output, size_t output_size)
              "- initialized: %s\n"
              "- ready: %s\n"
              "- last_error: %s\n"
-             "- sample_rate: %d\n"
+             "- input_sample_rate: %d\n"
+             "- output_sample_rate: %d\n"
              "- bits_per_sample: %d\n"
-             "- bclk_gpio: %d\n"
-             "- ws_gpio: %d\n"
-             "- din_gpio: %d\n"
-             "- dout_gpio: %d\n"
+             "- mic_ws_gpio: %d\n"
+             "- mic_sck_gpio: %d\n"
+             "- mic_din_gpio: %d\n"
+             "- spk_dout_gpio: %d\n"
+             "- spk_bclk_gpio: %d\n"
+             "- spk_lrck_gpio: %d\n"
              "- default_file: %s\n",
              MIMI_ENABLE_VOICE_HW ? "yes" : "no",
              s_initialized ? "yes" : "no",
              s_ready ? "yes" : "no",
              esp_err_to_name(s_last_error),
-             MIMI_VOICE_SAMPLE_RATE,
+             MIMI_VOICE_INPUT_SAMPLE_RATE,
+             MIMI_VOICE_OUTPUT_SAMPLE_RATE,
              MIMI_VOICE_BITS_PER_SAMPLE,
-             MIMI_VOICE_I2S_BCLK_GPIO,
-             MIMI_VOICE_I2S_WS_GPIO,
-             MIMI_VOICE_I2S_DIN_GPIO,
-             MIMI_VOICE_I2S_DOUT_GPIO,
+             MIMI_VOICE_MIC_WS_GPIO,
+             MIMI_VOICE_MIC_SCK_GPIO,
+             MIMI_VOICE_MIC_DIN_GPIO,
+             MIMI_VOICE_SPK_DOUT_GPIO,
+             MIMI_VOICE_SPK_BCLK_GPIO,
+             MIMI_VOICE_SPK_LRCK_GPIO,
              MIMI_VOICE_DEFAULT_FILE);
 }
 
@@ -240,10 +282,10 @@ esp_err_t voice_hw_beep(int freq_hz, int duration_ms)
     }
 
     int16_t samples[VOICE_CHUNK_SAMPLES];
-    int half_period = MIMI_VOICE_SAMPLE_RATE / (freq_hz * 2);
+    int half_period = MIMI_VOICE_OUTPUT_SAMPLE_RATE / (freq_hz * 2);
     if (half_period <= 0) half_period = 1;
 
-    int total_samples = (MIMI_VOICE_SAMPLE_RATE * duration_ms) / 1000;
+    int total_samples = (MIMI_VOICE_OUTPUT_SAMPLE_RATE * duration_ms) / 1000;
     int sample_index = 0;
     while (sample_index < total_samples) {
         int count = total_samples - sample_index;
@@ -264,6 +306,71 @@ esp_err_t voice_hw_beep(int freq_hz, int duration_ms)
     tx_disable();
     ESP_LOGI(TAG, "beep freq=%d duration=%d err=%s", freq_hz, duration_ms, esp_err_to_name(err));
     return err;
+}
+
+esp_err_t voice_hw_read_pcm(int16_t *samples, size_t max_samples, size_t *samples_read, uint32_t timeout_ms)
+{
+    if (samples_read) *samples_read = 0;
+    if (!samples || max_samples == 0) return ESP_ERR_INVALID_ARG;
+
+    esp_err_t err = ensure_ready();
+    if (err != ESP_OK) return err;
+
+    err = rx_enable();
+    if (err != ESP_OK) return err;
+
+    size_t bytes_read = 0;
+    err = i2s_channel_read(s_rx_chan, samples, max_samples * sizeof(int16_t),
+                           &bytes_read, pdMS_TO_TICKS(timeout_ms ? timeout_ms : 1200));
+    if (samples_read) *samples_read = bytes_read / sizeof(int16_t);
+    return err;
+}
+
+esp_err_t voice_hw_write_pcm(const int16_t *samples, size_t sample_count, int sample_rate, uint32_t timeout_ms)
+{
+    if (!samples || sample_count == 0) return ESP_ERR_INVALID_ARG;
+
+    esp_err_t err = ensure_ready();
+    if (err != ESP_OK) return err;
+
+    err = tx_enable();
+    if (err != ESP_OK) return err;
+
+    if (sample_rate <= 0 || sample_rate == MIMI_VOICE_OUTPUT_SAMPLE_RATE) {
+        size_t written = 0;
+        return i2s_channel_write(s_tx_chan, samples, sample_count * sizeof(int16_t),
+                                 &written, pdMS_TO_TICKS(timeout_ms ? timeout_ms : 1000));
+    }
+
+    if (sample_rate == MIMI_VOICE_INPUT_SAMPLE_RATE &&
+        MIMI_VOICE_OUTPUT_SAMPLE_RATE == 24000 &&
+        MIMI_VOICE_INPUT_SAMPLE_RATE == 16000) {
+        int16_t out[(VOICE_CHUNK_SAMPLES * 3) / 2 + 2];
+        size_t i = 0;
+        while (i + 1 < sample_count) {
+            size_t out_count = 0;
+            while (i + 1 < sample_count && out_count + 3 <= sizeof(out) / sizeof(out[0])) {
+                int16_t a = samples[i++];
+                int16_t b = samples[i++];
+                out[out_count++] = a;
+                out[out_count++] = (int16_t)clamp_sample(((int)a + (int)b) / 2);
+                out[out_count++] = b;
+            }
+            size_t written = 0;
+            err = i2s_channel_write(s_tx_chan, out, out_count * sizeof(int16_t),
+                                    &written, pdMS_TO_TICKS(timeout_ms ? timeout_ms : 1000));
+            if (err != ESP_OK) return err;
+        }
+        if (i < sample_count) {
+            size_t written = 0;
+            err = i2s_channel_write(s_tx_chan, &samples[i], sizeof(int16_t),
+                                    &written, pdMS_TO_TICKS(timeout_ms ? timeout_ms : 1000));
+        }
+        return err;
+    }
+
+    ESP_LOGW(TAG, "unsupported playback sample_rate=%d", sample_rate);
+    return ESP_ERR_NOT_SUPPORTED;
 }
 
 esp_err_t voice_hw_record_wav(const char *path, int seconds)
@@ -293,18 +400,18 @@ esp_err_t voice_hw_record_wav(const char *path, int seconds)
         return ESP_ERR_NO_MEM;
     }
 
-    uint32_t target_bytes = MIMI_VOICE_SAMPLE_RATE * seconds * sizeof(int16_t);
+    uint32_t target_bytes = MIMI_VOICE_INPUT_SAMPLE_RATE * seconds * sizeof(int16_t);
     uint32_t recorded = 0;
-    err = rx_enable();
     while (err == ESP_OK && recorded < target_bytes) {
         size_t want = target_bytes - recorded;
         if (want > VOICE_CHUNK_BYTES) want = VOICE_CHUNK_BYTES;
 
-        size_t bytes_read = 0;
-        err = i2s_channel_read(s_rx_chan, buf, want, &bytes_read, pdMS_TO_TICKS(1200));
+        size_t samples_read = 0;
+        err = voice_hw_read_pcm((int16_t *)buf, want / sizeof(int16_t), &samples_read, 1200);
         if (err != ESP_OK) {
             break;
         }
+        size_t bytes_read = samples_read * sizeof(int16_t);
         if (bytes_read > 0) {
             fwrite(buf, 1, bytes_read, f);
             recorded += bytes_read;
@@ -352,7 +459,8 @@ esp_err_t voice_hw_play_wav(const char *path)
     uint32_t sample_rate = read_le32(header + 24);
     uint16_t bits = read_le16(header + 34);
     uint32_t data_bytes = read_le32(header + 40);
-    if (format != 1 || channels != 1 || sample_rate != MIMI_VOICE_SAMPLE_RATE || bits != 16) {
+    if (format != 1 || channels != 1 || bits != 16 ||
+        (sample_rate != MIMI_VOICE_INPUT_SAMPLE_RATE && sample_rate != MIMI_VOICE_OUTPUT_SAMPLE_RATE)) {
         fclose(f);
         ESP_LOGE(TAG, "unsupported wav format fmt=%u channels=%u rate=%u bits=%u",
                  format, channels, (unsigned)sample_rate, bits);
@@ -365,7 +473,6 @@ esp_err_t voice_hw_play_wav(const char *path)
         return ESP_ERR_NO_MEM;
     }
 
-    err = tx_enable();
     uint32_t played = 0;
     while (err == ESP_OK && played < data_bytes) {
         size_t want = data_bytes - played;
@@ -373,10 +480,9 @@ esp_err_t voice_hw_play_wav(const char *path)
         size_t got = fread(buf, 1, want, f);
         if (got == 0) break;
 
-        size_t written = 0;
-        err = i2s_channel_write(s_tx_chan, buf, got, &written, pdMS_TO_TICKS(1000));
+        err = voice_hw_write_pcm((const int16_t *)buf, got / sizeof(int16_t), sample_rate, 1000);
         if (err != ESP_OK) break;
-        played += written;
+        played += got;
     }
     tx_disable();
 
