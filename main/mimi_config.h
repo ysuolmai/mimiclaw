@@ -68,6 +68,9 @@
 #ifndef MIMI_ENABLE_AUTO_MEMORY_SUMMARY
 #define MIMI_ENABLE_AUTO_MEMORY_SUMMARY (!MIMI_TARGET_C3_LITE)
 #endif
+#ifndef MIMI_ENABLE_VOICE_HW
+#define MIMI_ENABLE_VOICE_HW         (!MIMI_TARGET_C3_LITE)
+#endif
 
 /* WiFi */
 #define MIMI_WIFI_MAX_RETRY          10
@@ -168,6 +171,20 @@
 
 /* GPIO */
 #define MIMI_GPIO_CONFIG_SECTION     1   /* enable GPIO tools */
+
+/* Hardware voice (ESP32-S3 profile).
+ * Default pins target common I2S modules:
+ * - INMP441/SPH0645 microphone: BCLK, WS, DIN
+ * - MAX98357A speaker amp: BCLK, WS, DOUT
+ */
+#define MIMI_VOICE_I2S_BCLK_GPIO     4
+#define MIMI_VOICE_I2S_WS_GPIO       5
+#define MIMI_VOICE_I2S_DIN_GPIO      6
+#define MIMI_VOICE_I2S_DOUT_GPIO     7
+#define MIMI_VOICE_SAMPLE_RATE       16000
+#define MIMI_VOICE_BITS_PER_SAMPLE   16
+#define MIMI_VOICE_MAX_RECORD_SECONDS 10
+#define MIMI_VOICE_DEFAULT_FILE      MIMI_SPIFFS_BASE "/voice_last.wav"
 
 /* Skills */
 #define MIMI_SKILLS_PREFIX           MIMI_SPIFFS_BASE "/skills/"

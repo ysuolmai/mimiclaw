@@ -658,6 +658,54 @@ static esp_err_t http_post_api_memory(httpd_req_t *req)
     return http_send_text_result(req, err == ESP_OK, message);
 }
 
+static esp_err_t http_post_api_voice(httpd_req_t *req)
+{
+    char *body = http_read_body(req, 1024);
+    if (!body) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root) {
+        free(body);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    const char *action = cJSON_GetStringValue(cJSON_GetObjectItem(root, "action"));
+    const char *tool = NULL;
+    size_t output_size = 2048;
+
+    if (action && strcmp(action, "status") == 0) {
+        tool = "voice_status";
+    } else if (action && strcmp(action, "beep") == 0) {
+        tool = "voice_beep";
+    } else if (action && strcmp(action, "record") == 0) {
+        tool = "voice_record";
+    } else if (action && strcmp(action, "play") == 0) {
+        tool = "voice_play";
+    }
+
+    if (!tool) {
+        cJSON_Delete(root);
+        free(body);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown voice action");
+        return ESP_FAIL;
+    }
+
+    esp_err_t ret;
+    if (!MIMI_ENABLE_VOICE_HW) {
+        ret = http_send_text_result(req, false, "Hardware voice is disabled in this target profile");
+    } else {
+        ret = http_send_tool_result(req, tool, body, output_size);
+    }
+
+    cJSON_Delete(root);
+    free(body);
+    return ret;
+}
+
 static esp_err_t http_post_api_heartbeat(httpd_req_t *req)
 {
     bool triggered = heartbeat_trigger();
@@ -916,6 +964,11 @@ static httpd_handle_t start_http_server(bool captive)
         .uri = "/api/memory", .method = HTTP_POST, .handler = http_post_api_memory,
     };
     httpd_register_uri_handler(s_server, &uri_api_memory_post);
+
+    httpd_uri_t uri_api_voice = {
+        .uri = "/api/voice", .method = HTTP_POST, .handler = http_post_api_voice,
+    };
+    httpd_register_uri_handler(s_server, &uri_api_voice);
 
     httpd_uri_t uri_api_heartbeat = {
         .uri = "/api/heartbeat", .method = HTTP_POST, .handler = http_post_api_heartbeat,

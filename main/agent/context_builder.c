@@ -25,6 +25,16 @@ static const char *TAG = "context";
 #define MIMI_PROMPT_WEB_SEARCH_TOOL ""
 #endif
 
+#if MIMI_ENABLE_VOICE_HW
+#define MIMI_PROMPT_VOICE_TOOLS \
+        "- voice_status: Check I2S hardware voice module status and pins.\n" \
+        "- voice_beep: Play a test tone through the I2S speaker amplifier.\n" \
+        "- voice_record: Record a mono 16kHz WAV file from the I2S microphone.\n" \
+        "- voice_play: Play a mono 16kHz WAV file through the I2S speaker amplifier.\n"
+#else
+#define MIMI_PROMPT_VOICE_TOOLS ""
+#endif
+
 static size_t append_file(char *buf, size_t size, size_t offset, const char *path, const char *header)
 {
     FILE *f = fopen(path, "r");
@@ -67,6 +77,7 @@ esp_err_t context_build_system_prompt(char *buf, size_t size)
         "- memory_summarize: Refresh the on-device memory summary file.\n"
         "- memory_export: Export memory and sessions to a backup markdown file.\n"
         "- session_cleanup: Preview or delete old saved chat sessions.\n"
+        MIMI_PROMPT_VOICE_TOOLS
         "- cron_add: Schedule a recurring or one-shot task. The message will trigger an agent turn when the job fires.\n"
         "- cron_list: List all scheduled cron jobs.\n"
         "- cron_remove: Remove a scheduled cron job by ID.\n"

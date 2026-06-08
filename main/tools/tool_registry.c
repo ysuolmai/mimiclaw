@@ -7,6 +7,7 @@
 #include "tools/tool_gpio.h"
 #include "tools/tool_system.h"
 #include "tools/tool_memory.h"
+#include "tools/tool_voice.h"
 
 #include <string.h>
 #include "esp_log.h"
@@ -236,6 +237,56 @@ esp_err_t tool_registry_init(void)
         .execute = tool_session_cleanup_execute,
     };
     register_tool(&sc);
+
+#if MIMI_ENABLE_VOICE_HW
+    mimi_tool_t vs = {
+        .name = "voice_status",
+        .description = "Get hardware voice module status, I2S pins, sample rate, and default WAV path.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{},"
+            "\"required\":[]}",
+        .execute = tool_voice_status_execute,
+    };
+    register_tool(&vs);
+
+    mimi_tool_t vb = {
+        .name = "voice_beep",
+        .description = "Play a simple test tone through the I2S speaker amplifier.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"freq_hz\":{\"type\":\"integer\",\"description\":\"Tone frequency, default 880\"},"
+            "\"duration_ms\":{\"type\":\"integer\",\"description\":\"Tone duration, default 300\"}},"
+            "\"required\":[]}",
+        .execute = tool_voice_beep_execute,
+    };
+    register_tool(&vb);
+
+    mimi_tool_t vr = {
+        .name = "voice_record",
+        .description = "Record mono 16kHz 16-bit PCM from the I2S microphone to a WAV file on SPIFFS.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"SPIFFS WAV path, default " MIMI_VOICE_DEFAULT_FILE "\"},"
+            "\"seconds\":{\"type\":\"integer\",\"description\":\"Recording length, default 3, capped by firmware\"}},"
+            "\"required\":[]}",
+        .execute = tool_voice_record_execute,
+    };
+    register_tool(&vr);
+
+    mimi_tool_t vp = {
+        .name = "voice_play",
+        .description = "Play a mono 16kHz 16-bit PCM WAV file from SPIFFS through the I2S speaker amplifier.",
+        .input_schema_json =
+            "{\"type\":\"object\","
+            "\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"SPIFFS WAV path, default " MIMI_VOICE_DEFAULT_FILE "\"}},"
+            "\"required\":[]}",
+        .execute = tool_voice_play_execute,
+    };
+    register_tool(&vp);
+#else
+    ESP_LOGI(TAG, "hardware voice tools disabled in this target profile");
+#endif
 
     /* Register cron_add */
     mimi_tool_t ca = {
