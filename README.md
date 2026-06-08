@@ -35,9 +35,288 @@ You send a message on Telegram. The ESP32-S3 picks it up over WiFi, feeds it int
 
 ## Quick Start
 
+## ESP32-S3 Super Mini Quick Deploy
+
+This fork is configured for the common ESP32-S3 Super Mini / ESP32-S3FH4R2 board:
+
+- 4 MB Quad SPI flash
+- 2 MB Quad SPI PSRAM
+- Native USB Serial/JTAG console
+- Factory app at `0x20000`
+- SPIFFS/storage at `0x2F0000`
+- GitHub Actions artifact includes a merged firmware image that does not include SPIFFS/storage
+
+### 1. Flash Firmware
+
+Download the latest artifact from the GitHub Actions `Build` workflow:
+
+- `mimiclaw-esp32-s3-supermini-merged.bin`: bootloader + partition table + app
+- `spiffs.bin`: storage image, flashed separately only when you want to initialize or reset storage
+
+Flash merged firmware:
+
+```bash
+esptool.py --chip esp32s3 -b 460800 write_flash 0x0 mimiclaw-esp32-s3-supermini-merged.bin
+```
+
+Optional first-time storage flash:
+
+```bash
+esptool.py --chip esp32s3 -b 460800 write_flash 0x2F0000 spiffs.bin
+```
+
+Do not flash `spiffs.bin` during normal upgrades unless you intentionally want to reset local memory, logs, tasks, and config files.
+
+### 2. WiFi Onboarding
+
+If WiFi is not configured, the device starts a local hotspot:
+
+```text
+MimiClaw-XXXX
+```
+
+Connect your phone or computer to that hotspot, then open:
+
+```text
+http://192.168.4.1
+```
+
+Use the Web Admin page to configure:
+
+- WiFi SSID and password
+- LLM provider: `anthropic` or `openai`
+- API key
+- model name
+- Telegram Bot token
+- proxy settings, if needed
+- Tavily or Brave Search API key, optional
+- voice streaming server URL, optional
+
+Click `Save Config & Restart`. Values are stored in NVS and override build-time defaults.
+
+When the device is already connected to WiFi, the same admin portal remains available from the local AP while the firmware is running.
+
+### 3. Configure LLM API
+
+The easiest path is Web Admin:
+
+```text
+LLM Configuration
+API Key:  sk-ant-... or sk-...
+Provider: anthropic or openai
+Model:    claude-opus-4-5, gpt-4o, or another supported model
+```
+
+Build-time defaults are also supported. Copy the example file:
+
+```bash
+cp main/mimi_secrets.h.example main/mimi_secrets.h
+```
+
+Then edit:
+
+```c
+#define MIMI_SECRET_WIFI_SSID       "YourWiFiName"
+#define MIMI_SECRET_WIFI_PASS       "YourWiFiPassword"
+#define MIMI_SECRET_TG_TOKEN        "123456:ABC-DEF..."
+#define MIMI_SECRET_API_KEY         "sk-ant-api03-..."
+#define MIMI_SECRET_MODEL           "claude-opus-4-5"
+#define MIMI_SECRET_MODEL_PROVIDER  "anthropic"
+#define MIMI_SECRET_VOICE_STREAM_URL "ws://192.168.1.10:8765/mimi"
+```
+
+After changing `mimi_secrets.h`, rebuild:
+
+```bash
+idf.py fullclean
+idf.py build
+```
+
+Runtime config priority:
+
+```text
+Web Admin / Serial CLI NVS values > build-time mimi_secrets.h defaults
+```
+
+Useful serial CLI commands:
+
+```text
+mimi> wifi_set MySSID MyPassword
+mimi> set_tg_token 123456:ABC...
+mimi> set_api_key sk-ant-api03-...
+mimi> set_model_provider anthropic
+mimi> set_model claude-opus-4-5
+mimi> config_show
+mimi> config_reset
+```
+
+Voice streaming is configured from Web Admin or by the agent tool `voice_stream_config`; there is no dedicated serial CLI command for it yet.
+
+### 4. Telegram Bot
+
+1. Open Telegram and talk to `@BotFather`.
+2. Create a bot and copy the token.
+3. Put the token into Web Admin `Telegram Bot -> Bot Token`.
+4. Save and restart.
+5. Send a message to your bot.
+
+If the device has WiFi, a valid LLM API key, and a Telegram token, it will poll Telegram and reply from the ESP32.
+
+### 5. Hardware Voice
+
+Default ESP32-S3 Super Mini wiring follows the Xiaozhi Super Mini style:
+
+```text
+INMP441 microphone:
+WS    GPIO4
+SCK   GPIO5
+SD    GPIO6
+
+MAX98357A speaker:
+DIN   GPIO11
+BCLK  GPIO12
+LRC   GPIO13
+```
+
+In Web Admin, use `Voice Hardware`:
+
+- `Voice Status`: check I2S initialization and pins
+- `Test Beep`: test the MAX98357A speaker path
+- `Record WAV`: record a local WAV file to SPIFFS
+- `Play WAV`: play the local WAV file
+- `Streaming Server URL`: WebSocket endpoint for your voice server
+- `Start Stream`: send a streaming voice turn to the server
+
+Current streaming codec:
+
+```text
+pcm16 input:  16 kHz, mono, signed little-endian PCM
+pcm16 output: 24 kHz, mono, signed little-endian PCM
+```
+
+`opus` is reserved in the UI, but the current firmware sends PCM16 fallback unless an Opus encoder/decoder component is added.
+
+### 6. Voice Server Deployment
+
+STT and TTS should run on a separate small server, NAS, mini PC, or Raspberry Pi. A realistic stack is:
+
+```text
+ESP32-S3 Super Mini
+  I2S mic/speaker
+  WebSocket PCM16 stream
+        |
+        v
+Voice bridge server
+  VAD/STT/TTS with sherpa-onnx or another engine
+        |
+        v
+LLM API / optional MimiClaw WebSocket or Telegram flow
+```
+
+Install a Python environment on the server:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install websockets numpy
+```
+
+Install sherpa-onnx using the official guide for your platform and model choice:
+
+- https://github.com/k2-fsa/sherpa-onnx
+- https://k2-fsa.github.io/sherpa/onnx/
+
+The firmware expects this WebSocket contract:
+
+1. ESP32 connects to `ws://SERVER:PORT/mimi`.
+2. ESP32 sends a text JSON hello frame:
+
+```json
+{
+  "type": "hello",
+  "device": "mimiclaw-esp32-s3-supermini",
+  "transport": "websocket",
+  "codec": "pcm16",
+  "sample_rate": 16000,
+  "output_sample_rate": 24000,
+  "channels": 1,
+  "frame_ms": 60,
+  "seconds": 10
+}
+```
+
+3. ESP32 sends `{"type":"listen","state":"start"}`.
+4. ESP32 sends binary PCM16 audio frames.
+5. ESP32 sends `{"type":"listen","state":"stop"}`.
+6. Server may return text JSON for logs/transcripts.
+7. Server may return binary PCM16 at 24 kHz mono; ESP32 plays it immediately.
+
+Minimal bridge skeleton:
+
+```python
+import asyncio
+import json
+import websockets
+
+
+async def run_stt(pcm_bytes: bytes, sample_rate: int) -> str:
+    # TODO: call sherpa-onnx streaming/offline recognizer here.
+    return ""
+
+
+async def run_tts(text: str) -> bytes:
+    # TODO: call sherpa-onnx TTS here and return 24 kHz mono PCM16 bytes.
+    return b""
+
+
+async def handler(ws):
+    sample_rate = 16000
+    audio = bytearray()
+
+    async for msg in ws:
+        if isinstance(msg, str):
+            data = json.loads(msg)
+            if data.get("type") == "hello":
+                sample_rate = int(data.get("sample_rate", 16000))
+                await ws.send(json.dumps({"type": "ready"}))
+            elif data.get("type") == "listen" and data.get("state") == "stop":
+                text = await run_stt(bytes(audio), sample_rate)
+                await ws.send(json.dumps({"type": "transcript", "text": text}))
+                pcm24 = await run_tts(text)
+                if pcm24:
+                    await ws.send(pcm24)
+                audio.clear()
+        else:
+            audio.extend(msg)
+
+
+async def main():
+    async with websockets.serve(handler, "0.0.0.0", 8765, max_size=None):
+        print("voice bridge listening on ws://0.0.0.0:8765/mimi")
+        await asyncio.Future()
+
+
+asyncio.run(main())
+```
+
+Start it:
+
+```bash
+python voice_bridge.py
+```
+
+Then set the ESP32 Web Admin `Streaming Server URL`:
+
+```text
+ws://<server-ip>:8765/mimi
+```
+
+For production, keep the server and ESP32 on the same LAN or VPN. Avoid exposing the voice WebSocket directly to the public internet unless you add authentication and TLS.
+
 ### What You Need
 
-- An **ESP32-S3 dev board** with 16 MB flash and 8 MB PSRAM (e.g. Xiaozhi AI board, ~$10)
+- An **ESP32-S3 Super Mini / ESP32-S3FH4R2 board** with 4 MB flash and 2 MB PSRAM
+- Optional voice hardware: **INMP441** I2S microphone and **MAX98357A** I2S speaker amplifier
 - A **USB Type-C cable**
 - A **Telegram bot token** — talk to [@BotFather](https://t.me/BotFather) on Telegram to create one
 - An **Anthropic API key** — from [console.anthropic.com](https://console.anthropic.com), or an **OpenAI API key** — from [platform.openai.com](https://platform.openai.com)
@@ -48,7 +327,7 @@ You send a message on Telegram. The ESP32-S3 picks it up over WiFi, feeds it int
 # You need ESP-IDF v5.5+ installed first:
 # https://docs.espressif.com/projects/esp-idf/en/v5.5.2/esp32s3/get-started/
 
-git clone https://github.com/memovai/mimiclaw.git
+git clone https://github.com/ysuolmai/mimiclaw.git
 cd mimiclaw
 
 idf.py set-target esp32s3
