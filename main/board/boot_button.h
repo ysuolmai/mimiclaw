@@ -4,6 +4,7 @@
 
 /**
  * Start BOOT button monitoring.
+ * Short pressing BOOT toggles a voice streaming turn.
  * Holding BOOT for MIMI_BOOT_BUTTON_LONG_PRESS_MS requests AP-only WiFi
  * reconfiguration mode and restarts the device. Saved credentials are kept.
  */

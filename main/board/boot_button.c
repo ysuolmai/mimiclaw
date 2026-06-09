@@ -1,6 +1,7 @@
 #include "board/boot_button.h"
 
 #include "mimi_config.h"
+#include "voice/voice_stream.h"
 #include "wifi/wifi_manager.h"
 
 #include "driver/gpio.h"
@@ -12,6 +13,32 @@
 #include <stdbool.h>
 
 static const char *TAG = "boot_button";
+
+static void toggle_voice_stream(void)
+{
+    voice_stream_status_t status;
+    char output[160];
+
+    voice_stream_get_status(&status);
+    if (status.active) {
+        esp_err_t err = voice_stream_stop();
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "BOOT short press: stopped voice stream");
+        } else {
+            ESP_LOGW(TAG, "BOOT short press: voice stream stop failed: %s",
+                     esp_err_to_name(err));
+        }
+        return;
+    }
+
+    esp_err_t err = voice_stream_start(MIMI_BOOT_BUTTON_VOICE_STREAM_SECONDS,
+                                       output, sizeof(output));
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "BOOT short press: %s", output);
+    } else {
+        ESP_LOGW(TAG, "BOOT short press: %s", output);
+    }
+}
 
 static void boot_button_task(void *arg)
 {
@@ -35,6 +62,9 @@ static void boot_button_task(void *arg)
                 esp_restart();
             }
         } else {
+            if (!fired && held_ms >= MIMI_BOOT_BUTTON_SHORT_PRESS_MIN_MS) {
+                toggle_voice_stream();
+            }
             held_ms = 0;
             fired = false;
         }
@@ -71,7 +101,8 @@ esp_err_t boot_button_init(void)
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "BOOT GPIO%d long press (%d ms) armed",
-             MIMI_BOOT_BUTTON_GPIO, MIMI_BOOT_BUTTON_LONG_PRESS_MS);
+    ESP_LOGI(TAG, "BOOT GPIO%d short press toggles voice stream (%d s); long press (%d ms) enters WiFi setup",
+             MIMI_BOOT_BUTTON_GPIO, MIMI_BOOT_BUTTON_VOICE_STREAM_SECONDS,
+             MIMI_BOOT_BUTTON_LONG_PRESS_MS);
     return ESP_OK;
 }
