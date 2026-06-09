@@ -92,15 +92,25 @@ Use the Web Admin page to configure:
 - proxy settings, if needed
 - Tavily or Brave Search API key, optional
 - voice streaming server URL, optional
+- Web Admin username/password for STA access
 
 Click `Save Config & Restart`. Values are stored in NVS and override build-time defaults.
 
 Current Super Mini behavior:
 
 - after STA WiFi connects successfully, the `MimiClaw-XXXX` AP is not kept online
-- Web Admin is still served on the device STA IP shown in serial logs
+- Web Admin is still served on the device STA IP shown in serial logs, protected by HTTP Basic Auth
 - hold BOOT for 5 seconds to skip STA connection and reboot into the `MimiClaw-XXXX` reconfiguration portal; saved SSID/password are kept and prefilled
 - the onboard status LED stays off during normal operation and slowly blinks only while the AP onboarding portal is active; defaults are WS2812/RGB on GPIO48 for ESP32-S3 Super Mini and active-low GPIO on GPIO8 for ESP32-C3 Super Mini
+
+STA Web Admin login:
+
+```text
+Username: admin
+Password: mimiclaw-XXXX
+```
+
+`XXXX` matches the `MimiClaw-XXXX` AP suffix and is also printed in serial logs the first time the STA admin server starts. Set a custom password in `Admin Security -> Password`; leaving that password box blank keeps the existing password. The first-time/BOOT forced `MimiClaw-XXXX` AP portal remains open so you can recover or change the admin password locally.
 
 ### 3. Configure LLM API
 
@@ -152,6 +162,8 @@ Then edit:
 #define MIMI_SECRET_MODEL_PROVIDER  "anthropic"
 #define MIMI_SECRET_LLM_BASE_URL    ""
 #define MIMI_SECRET_VOICE_STREAM_URL "ws://192.168.1.10:8765/mimi"
+#define MIMI_SECRET_ADMIN_USER      "admin"
+#define MIMI_SECRET_ADMIN_PASS      "change-this"
 ```
 
 After changing `mimi_secrets.h`, rebuild:

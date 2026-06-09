@@ -33,6 +33,7 @@ static const char ONBOARD_HTML[] =
 ".ap-item:active{background:#edf6ff}"
 ".ap-rssi{color:#697586;font-size:.85em;white-space:nowrap}"
 ".ap-lock::before{content:'\\25CF';font-size:.65em;margin-right:5px;color:#697586}"
+".hint{font-size:.78em;color:#697586;line-height:1.35;margin-top:7px}"
 ".out{white-space:pre-wrap;background:#101828;color:#e4e7ec;border-radius:6px;padding:10px;margin-top:8px;min-height:44px;max-height:260px;overflow:auto;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}"
 ".status{text-align:center;padding:16px;color:#1557b0;font-size:1em;display:none}"
 "@media(max-width:520px){body{padding:12px}.row{grid-template-columns:1fr}.btn{flex:1 1 auto}}"
@@ -48,6 +49,16 @@ static const char ONBOARD_HTML[] =
 "<button class='btn' onclick='runHeartbeat()'>Run Heartbeat</button>"
 "</div>"
 "<pre class='out' id='status_out'>Ready.</pre>"
+"</div></div>"
+
+"<div class='card' id='sec-admin'>"
+"<div class='card-hdr' onclick='toggle(this)'>Admin Security</div>"
+"<div class='card-body'>"
+"<label>Username</label>"
+"<input id='admin_user' placeholder='admin'>"
+"<label>Password</label>"
+"<input id='admin_password' type='password' placeholder='Leave blank to keep existing'>"
+"<p class='hint'>Used when opening Web Admin from the STA IP. First-time and BOOT forced AP setup stays open for local recovery.</p>"
 "</div></div>"
 
 "<div class='card' id='sec-wifi'>"
@@ -223,7 +234,7 @@ static const char ONBOARD_HTML[] =
 "function voiceStreamStop(){apiPost('/api/voice',{action:'stream_stop'},'voice_out')}"
 "function loadConfig(){fetch('/config').then(r=>r.json()).then(cfg=>{Object.keys(cfg).forEach(k=>{var el=$(k);if(el&&cfg[k]!==undefined&&cfg[k]!==null){el.value=cfg[k]}})}).catch(()=>{})}"
 "function scan(ev){var btn=ev&&ev.target?ev.target:event.target;btn.textContent='Scanning...';btn.disabled=true;fetch('/scan').then(r=>r.json()).then(list=>{var el=$('ap-list');el.style.display='block';el.innerHTML='';list.forEach(ap=>{var d=document.createElement('div');d.className='ap-item';d.innerHTML='<span>'+(ap.auth?'<span class=ap-lock></span>':'')+ap.ssid+'</span><span class=ap-rssi>'+ap.rssi+' dBm</span>';d.onclick=function(){$('ssid').value=ap.ssid};el.appendChild(d)});btn.textContent='Scan WiFi Networks';btn.disabled=false}).catch(()=>{btn.textContent='Scan WiFi Networks';btn.disabled=false})}"
-"function saveConfig(){var fields=['ssid','password','api_key','model','provider','base_url','tg_token','feishu_app_id','feishu_app_secret','proxy_host','proxy_port','proxy_type','search_key','tavily_key','voice_stream_url','voice_codec'];var data={};fields.forEach(f=>{data[f]=$(f).value.trim()});$('save_status').style.display='block';fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{$('save_status').textContent='Saved! Restarting...'}).catch(()=>{$('save_status').textContent='Error. Please try again.'})}"
+"function saveConfig(){var fields=['ssid','password','api_key','model','provider','base_url','tg_token','feishu_app_id','feishu_app_secret','proxy_host','proxy_port','proxy_type','search_key','tavily_key','voice_stream_url','voice_codec','admin_user','admin_password'];var data={};fields.forEach(f=>{data[f]=$(f).value.trim()});$('save_status').style.display='block';fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(()=>{$('save_status').textContent='Saved! Restarting...'}).catch(()=>{$('save_status').textContent='Error. Please try again.'})}"
 "loadConfig();refreshStatus();"
 "</script>"
 "</body></html>";

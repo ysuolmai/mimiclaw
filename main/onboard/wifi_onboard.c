@@ -29,6 +29,154 @@ static const char *TAG = "onboard";
 static httpd_handle_t s_server = NULL;
 static bool s_captive_mode = false;
 
+#define ADMIN_USER_MAX_LEN 32
+#define ADMIN_PASS_MAX_LEN 64
+#define ADMIN_BASIC_MAX_LEN 192
+
+static bool nvs_get_string(const char *ns, const char *key, char *out, size_t out_size)
+{
+    if (!ns || !key || !out || out_size == 0) return false;
+    out[0] = '\0';
+
+    nvs_handle_t nvs;
+    if (nvs_open(ns, NVS_READONLY, &nvs) != ESP_OK) {
+        return false;
+    }
+
+    size_t len = out_size;
+    bool found = (nvs_get_str(nvs, key, out, &len) == ESP_OK && out[0] != '\0');
+    nvs_close(nvs);
+    return found;
+}
+
+static void admin_fallback_password(char *out, size_t out_size)
+{
+    if (!out || out_size == 0) return;
+
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+    snprintf(out, out_size, "mimiclaw-%02X%02X", mac[4], mac[5]);
+}
+
+static void admin_get_user(char *out, size_t out_size)
+{
+    if (!out || out_size == 0) return;
+    if (nvs_get_string(MIMI_NVS_ADMIN, MIMI_NVS_KEY_ADMIN_USER, out, out_size)) {
+        return;
+    }
+    if (MIMI_SECRET_ADMIN_USER[0] != '\0') {
+        strlcpy(out, MIMI_SECRET_ADMIN_USER, out_size);
+        return;
+    }
+    strlcpy(out, "admin", out_size);
+}
+
+static bool admin_password_is_custom(void)
+{
+    char value[ADMIN_PASS_MAX_LEN] = {0};
+    return nvs_get_string(MIMI_NVS_ADMIN, MIMI_NVS_KEY_ADMIN_PASS, value, sizeof(value)) ||
+           MIMI_SECRET_ADMIN_PASS[0] != '\0';
+}
+
+static void admin_get_password(char *out, size_t out_size)
+{
+    if (!out || out_size == 0) return;
+    if (nvs_get_string(MIMI_NVS_ADMIN, MIMI_NVS_KEY_ADMIN_PASS, out, out_size)) {
+        return;
+    }
+    if (MIMI_SECRET_ADMIN_PASS[0] != '\0') {
+        strlcpy(out, MIMI_SECRET_ADMIN_PASS, out_size);
+        return;
+    }
+    admin_fallback_password(out, out_size);
+}
+
+static bool base64_encode_basic(const uint8_t *input, size_t input_len,
+                                char *out, size_t out_size)
+{
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t needed = ((input_len + 2) / 3) * 4 + 1;
+    if (!input || !out || out_size < needed) {
+        if (out && out_size) out[0] = '\0';
+        return false;
+    }
+
+    size_t i = 0;
+    size_t o = 0;
+    while (i < input_len) {
+        size_t remaining = input_len - i;
+        uint32_t octet_a = input[i++];
+        uint32_t octet_b = (remaining > 1) ? input[i++] : 0;
+        uint32_t octet_c = (remaining > 2) ? input[i++] : 0;
+        uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+
+        out[o++] = alphabet[(triple >> 18) & 0x3F];
+        out[o++] = alphabet[(triple >> 12) & 0x3F];
+        out[o++] = (remaining > 1) ? alphabet[(triple >> 6) & 0x3F] : '=';
+        out[o++] = (remaining > 2) ? alphabet[triple & 0x3F] : '=';
+    }
+    out[o] = '\0';
+    return true;
+}
+
+static esp_err_t http_send_auth_required(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"MimiClaw Admin\", charset=\"UTF-8\"");
+    return httpd_resp_send(req, "Authentication required", HTTPD_RESP_USE_STRLEN);
+}
+
+static bool http_admin_authorized(httpd_req_t *req)
+{
+    if (s_captive_mode) {
+        return true;
+    }
+
+    size_t auth_len = httpd_req_get_hdr_value_len(req, "Authorization");
+    if (auth_len == 0 || auth_len >= ADMIN_BASIC_MAX_LEN) {
+        http_send_auth_required(req);
+        return false;
+    }
+
+    char auth[ADMIN_BASIC_MAX_LEN] = {0};
+    if (httpd_req_get_hdr_value_str(req, "Authorization", auth, sizeof(auth)) != ESP_OK ||
+        strncmp(auth, "Basic ", 6) != 0) {
+        http_send_auth_required(req);
+        return false;
+    }
+
+    char user[ADMIN_USER_MAX_LEN] = {0};
+    char pass[ADMIN_PASS_MAX_LEN] = {0};
+    char pair[ADMIN_USER_MAX_LEN + ADMIN_PASS_MAX_LEN + 2] = {0};
+    char encoded[ADMIN_BASIC_MAX_LEN] = {0};
+    admin_get_user(user, sizeof(user));
+    admin_get_password(pass, sizeof(pass));
+    snprintf(pair, sizeof(pair), "%s:%s", user, pass);
+
+    if (!base64_encode_basic((const uint8_t *)pair, strlen(pair), encoded, sizeof(encoded)) ||
+        strcmp(auth + 6, encoded) != 0) {
+        http_send_auth_required(req);
+        return false;
+    }
+
+    return true;
+}
+
+static void admin_log_auth_hint(void)
+{
+    char user[ADMIN_USER_MAX_LEN] = {0};
+    admin_get_user(user, sizeof(user));
+    if (admin_password_is_custom()) {
+        ESP_LOGI(TAG, "STA Web Admin auth enabled: username=%s, password=<configured>", user);
+    } else {
+        char pass[ADMIN_PASS_MAX_LEN] = {0};
+        admin_get_password(pass, sizeof(pass));
+        ESP_LOGW(TAG, "STA Web Admin auth enabled: username=%s, generated password=%s", user, pass);
+    }
+}
+
 static int hex_value(char c)
 {
     if (c >= '0' && c <= '9') return c - '0';
@@ -332,6 +480,7 @@ static void dns_hijack_task(void *arg)
 
 static esp_err_t http_get_root(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     return httpd_resp_send(req, ONBOARD_HTML, sizeof(ONBOARD_HTML) - 1);
@@ -347,6 +496,8 @@ static esp_err_t http_captive_redirect(httpd_req_t *req)
 
 static esp_err_t http_get_scan(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     wifi_scan_config_t scan_cfg = {
         .ssid = NULL,
         .bssid = NULL,
@@ -396,6 +547,8 @@ static esp_err_t http_get_scan(httpd_req_t *req)
 
 static esp_err_t http_get_config(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     cJSON *root = cJSON_CreateObject();
     if (!root) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
@@ -403,21 +556,27 @@ static esp_err_t http_get_config(httpd_req_t *req)
     }
 
     json_add_effective_config(root, "ssid", MIMI_NVS_WIFI, MIMI_NVS_KEY_SSID, MIMI_SECRET_WIFI_SSID);
-    json_add_effective_config(root, "password", MIMI_NVS_WIFI, MIMI_NVS_KEY_PASS, MIMI_SECRET_WIFI_PASS);
-    json_add_effective_config(root, "api_key", MIMI_NVS_LLM, MIMI_NVS_KEY_API_KEY, MIMI_SECRET_API_KEY);
+    cJSON_AddStringToObject(root, "password", "");
+    cJSON_AddStringToObject(root, "api_key", "");
     json_add_effective_config(root, "model", MIMI_NVS_LLM, MIMI_NVS_KEY_MODEL, MIMI_SECRET_MODEL);
     json_add_effective_config(root, "provider", MIMI_NVS_LLM, MIMI_NVS_KEY_PROVIDER, MIMI_SECRET_MODEL_PROVIDER);
     json_add_effective_config(root, "base_url", MIMI_NVS_LLM, MIMI_NVS_KEY_LLM_BASE_URL, MIMI_SECRET_LLM_BASE_URL);
-    json_add_effective_config(root, "tg_token", MIMI_NVS_TG, MIMI_NVS_KEY_TG_TOKEN, MIMI_SECRET_TG_TOKEN);
+    cJSON_AddStringToObject(root, "tg_token", "");
     json_add_effective_config(root, "feishu_app_id", MIMI_NVS_FEISHU, MIMI_NVS_KEY_FEISHU_APP_ID, MIMI_SECRET_FEISHU_APP_ID);
-    json_add_effective_config(root, "feishu_app_secret", MIMI_NVS_FEISHU, MIMI_NVS_KEY_FEISHU_APP_SECRET, MIMI_SECRET_FEISHU_APP_SECRET);
+    cJSON_AddStringToObject(root, "feishu_app_secret", "");
     json_add_effective_config(root, "proxy_host", MIMI_NVS_PROXY, MIMI_NVS_KEY_PROXY_HOST, MIMI_SECRET_PROXY_HOST);
     json_add_effective_config_u16(root, "proxy_port", MIMI_NVS_PROXY, MIMI_NVS_KEY_PROXY_PORT, MIMI_SECRET_PROXY_PORT);
     json_add_effective_config(root, "proxy_type", MIMI_NVS_PROXY, MIMI_NVS_KEY_PROXY_TYPE, MIMI_SECRET_PROXY_TYPE);
-    json_add_effective_config(root, "search_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_API_KEY, MIMI_SECRET_SEARCH_KEY);
-    json_add_effective_config(root, "tavily_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_TAVILY_KEY, MIMI_SECRET_TAVILY_KEY);
+    cJSON_AddStringToObject(root, "search_key", "");
+    cJSON_AddStringToObject(root, "tavily_key", "");
     json_add_effective_config(root, "voice_stream_url", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_STREAM_URL, MIMI_SECRET_VOICE_STREAM_URL);
     json_add_effective_config(root, "voice_codec", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_CODEC, MIMI_VOICE_STREAM_DEFAULT_CODEC);
+    char admin_user[ADMIN_USER_MAX_LEN] = {0};
+    admin_get_user(admin_user, sizeof(admin_user));
+    cJSON_AddStringToObject(root, "admin_user", admin_user);
+    cJSON_AddStringToObject(root, "admin_password", "");
+    cJSON_AddBoolToObject(root, "admin_auth_required", !s_captive_mode);
+    cJSON_AddBoolToObject(root, "admin_password_custom", admin_password_is_custom());
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -435,16 +594,20 @@ static esp_err_t http_get_config(httpd_req_t *req)
 
 static esp_err_t http_get_api_status(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
     return http_send_tool_result(req, "system_status", "{}", 2048);
 }
 
 static esp_err_t http_get_api_tasks(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
     return http_send_tool_result(req, "cron_list", "{}", 4096);
 }
 
 static esp_err_t http_post_api_task_remove(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     char *body = http_read_body(req, 512);
     if (!body) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
@@ -479,6 +642,8 @@ static esp_err_t http_post_api_task_remove(httpd_req_t *req)
 
 static esp_err_t http_get_api_files(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     char prefix[192];
     if (!http_get_query_value(req, "prefix", prefix, sizeof(prefix)) || prefix[0] == '\0') {
         return http_send_tool_result(req, "list_dir", "{}", 4096);
@@ -497,6 +662,8 @@ static esp_err_t http_get_api_files(httpd_req_t *req)
 
 static esp_err_t http_get_api_file(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     char path[192];
     if (!http_get_query_value(req, "path", path, sizeof(path)) || path[0] == '\0') {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing path");
@@ -527,6 +694,8 @@ static esp_err_t http_get_api_file(httpd_req_t *req)
 
 static esp_err_t http_post_api_file(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     char *body = http_read_body(req, 8192);
     if (!body) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
@@ -559,6 +728,8 @@ static esp_err_t http_post_api_file(httpd_req_t *req)
 
 static esp_err_t http_get_api_memory(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     char *long_term = calloc(1, 4096);
     char *recent = calloc(1, 4096);
     char *summary = calloc(1, 4096);
@@ -597,6 +768,8 @@ static esp_err_t http_get_api_memory(httpd_req_t *req)
 
 static esp_err_t http_post_api_memory(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     char *body = http_read_body(req, 8192);
     if (!body) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
@@ -663,6 +836,8 @@ static esp_err_t http_post_api_memory(httpd_req_t *req)
 
 static esp_err_t http_post_api_voice(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     char *body = http_read_body(req, 1024);
     if (!body) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body");
@@ -719,6 +894,7 @@ static esp_err_t http_post_api_voice(httpd_req_t *req)
 
 static esp_err_t http_post_api_heartbeat(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
     bool triggered = heartbeat_trigger();
     return http_send_text_result(req, true,
                                  triggered ? "Heartbeat prompted the agent" : "No actionable heartbeat tasks");
@@ -773,6 +949,30 @@ static void nvs_sync_secret_field(cJSON *root, const char *json_key,
     nvs_sync_field(root, json_key, ns, nvs_key);
 }
 
+static void nvs_sync_limited_field(cJSON *root, const char *json_key,
+                                   const char *ns, const char *nvs_key,
+                                   size_t max_len, bool keep_empty)
+{
+    cJSON *item = cJSON_GetObjectItem(root, json_key);
+    if (!item || !cJSON_IsString(item)) return;
+
+    if (item->valuestring[0] == '\0') {
+        if (keep_empty) {
+            ESP_LOGI(TAG, "Kept %s/%s (empty field ignored)", ns, nvs_key);
+            return;
+        }
+        nvs_sync_field(root, json_key, ns, nvs_key);
+        return;
+    }
+
+    if (strlen(item->valuestring) >= max_len) {
+        ESP_LOGW(TAG, "Ignoring %s: value is too long", json_key);
+        return;
+    }
+
+    nvs_sync_field(root, json_key, ns, nvs_key);
+}
+
 static void nvs_sync_u16_field(cJSON *root, const char *json_key,
                                const char *ns, const char *nvs_key)
 {
@@ -805,8 +1005,10 @@ static void nvs_sync_u16_field(cJSON *root, const char *json_key,
 
 static esp_err_t http_post_save(httpd_req_t *req)
 {
+    if (!http_admin_authorized(req)) return ESP_OK;
+
     int total_len = req->content_len;
-    if (total_len <= 0 || total_len > 2048) {
+    if (total_len <= 0 || total_len > 3072) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad length");
         return ESP_FAIL;
     }
@@ -864,6 +1066,12 @@ static esp_err_t http_post_save(httpd_req_t *req)
     /* Voice stream */
     nvs_sync_field(root, "voice_stream_url", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_STREAM_URL);
     nvs_sync_field(root, "voice_codec", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_CODEC);
+
+    /* Web Admin auth */
+    nvs_sync_limited_field(root, "admin_user", MIMI_NVS_ADMIN, MIMI_NVS_KEY_ADMIN_USER,
+                           ADMIN_USER_MAX_LEN, false);
+    nvs_sync_limited_field(root, "admin_password", MIMI_NVS_ADMIN, MIMI_NVS_KEY_ADMIN_PASS,
+                           ADMIN_PASS_MAX_LEN, true);
 
     cJSON_Delete(root);
 
@@ -925,6 +1133,8 @@ static httpd_handle_t start_http_server(bool captive)
         }
         return s_server;
     }
+
+    s_captive_mode = captive;
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = MIMI_ONBOARD_HTTP_PORT;
@@ -1030,8 +1240,10 @@ static httpd_handle_t start_http_server(bool captive)
         }
     }
 
-    s_captive_mode = captive;
     ESP_LOGI(TAG, "HTTP server started on port %d", MIMI_ONBOARD_HTTP_PORT);
+    if (!captive) {
+        admin_log_auth_hint();
+    }
     return s_server;
 }
 

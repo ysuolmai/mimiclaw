@@ -60,6 +60,12 @@
 #ifndef MIMI_SECRET_VOICE_STREAM_URL
 #define MIMI_SECRET_VOICE_STREAM_URL ""
 #endif
+#ifndef MIMI_SECRET_ADMIN_USER
+#define MIMI_SECRET_ADMIN_USER      "admin"
+#endif
+#ifndef MIMI_SECRET_ADMIN_PASS
+#define MIMI_SECRET_ADMIN_PASS      ""
+#endif
 
 /* Target feature profile */
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
@@ -287,6 +293,7 @@
 #define MIMI_NVS_PROXY               "proxy_config"
 #define MIMI_NVS_SEARCH              "search_config"
 #define MIMI_NVS_VOICE               "voice_config"
+#define MIMI_NVS_ADMIN               "admin_config"
 
 /* NVS Keys */
 #define MIMI_NVS_KEY_SSID            "ssid"
@@ -305,6 +312,8 @@
 #define MIMI_NVS_KEY_VOICE_STREAM_URL "stream_url"
 #define MIMI_NVS_KEY_VOICE_CODEC     "codec"
 #define MIMI_NVS_KEY_FORCE_ONBOARD   "force_onboard"
+#define MIMI_NVS_KEY_ADMIN_USER      "user"
+#define MIMI_NVS_KEY_ADMIN_PASS      "password"
 
 /* WiFi Onboarding (Captive Portal) */
 #define MIMI_ONBOARD_AP_PREFIX    "MimiClaw-"

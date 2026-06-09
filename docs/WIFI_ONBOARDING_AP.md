@@ -35,12 +35,22 @@ Typical uses:
    - `Feishu`
    - `Proxy`
    - `Search`
+   - `Admin Security`
 7. Click `Save & Restart`.
 8. Wait for the device to reboot and join your normal Wi-Fi network.
 
 ## Updating Settings Later
 
 On the ESP32-S3 Super Mini build, the admin AP is turned off after normal Wi-Fi connection. Use the STA IP printed in serial logs, for example `http://192.168.1.123`, to open the same admin page from your LAN.
+
+The STA admin page requires HTTP Basic Auth:
+
+```text
+Username: admin
+Password: mimiclaw-XXXX
+```
+
+`XXXX` matches the `MimiClaw-XXXX` AP suffix. If you set `Admin Security -> Password`, that custom password is used instead; leaving the password field blank keeps the existing value. A build can also bake credentials with `MIMI_SECRET_ADMIN_USER` and `MIMI_SECRET_ADMIN_PASS` in `main/mimi_secrets.h`.
 
 To re-open the local `MimiClaw-XXXX` configuration hotspot, hold BOOT for 5 seconds. The firmware keeps saved Wi-Fi credentials unchanged, stores a one-shot force-onboarding request, skips STA connection on the next boot, and starts captive portal mode.
 
@@ -98,5 +108,5 @@ To return to build-time defaults:
 ## Notes
 
 - The onboarding AP is typically local-only and intended for nearby configuration.
-- Current onboarding implementations may use an open AP for simplicity, so avoid leaving it exposed longer than necessary.
-- If your deployment needs stronger local protection, add an AP password before using the flow in production.
+- The first-time and BOOT forced onboarding AP stays open for local recovery, so avoid leaving it exposed longer than necessary.
+- The STA IP admin page is password protected, but it is still plain HTTP on your LAN, not HTTPS.

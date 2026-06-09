@@ -605,6 +605,8 @@ static int cmd_config_show(int argc, char **argv)
     print_config_u16("Proxy Port", MIMI_NVS_PROXY, MIMI_NVS_KEY_PROXY_PORT, MIMI_SECRET_PROXY_PORT);
     print_config("Search Key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_API_KEY,  MIMI_SECRET_SEARCH_KEY, true);
     print_config("Tavily Key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_TAVILY_KEY, MIMI_SECRET_TAVILY_KEY, true);
+    print_config("Admin User", MIMI_NVS_ADMIN,  MIMI_NVS_KEY_ADMIN_USER, MIMI_SECRET_ADMIN_USER, false);
+    print_config("Admin Pass", MIMI_NVS_ADMIN,  MIMI_NVS_KEY_ADMIN_PASS, MIMI_SECRET_ADMIN_PASS, true);
     printf("=============================\n");
     return 0;
 }
@@ -613,9 +615,10 @@ static int cmd_config_show(int argc, char **argv)
 static int cmd_config_reset(int argc, char **argv)
 {
     const char *namespaces[] = {
-        MIMI_NVS_WIFI, MIMI_NVS_TG, MIMI_NVS_LLM, MIMI_NVS_PROXY, MIMI_NVS_SEARCH
+        MIMI_NVS_WIFI, MIMI_NVS_TG, MIMI_NVS_LLM, MIMI_NVS_PROXY, MIMI_NVS_SEARCH,
+        MIMI_NVS_VOICE, MIMI_NVS_FEISHU, MIMI_NVS_ADMIN
     };
-    for (int i = 0; i < 5; i++) {
+    for (size_t i = 0; i < sizeof(namespaces) / sizeof(namespaces[0]); i++) {
         nvs_handle_t nvs;
         if (nvs_open(namespaces[i], NVS_READWRITE, &nvs) == ESP_OK) {
             nvs_erase_all(nvs);
