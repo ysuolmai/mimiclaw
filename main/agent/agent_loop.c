@@ -202,9 +202,11 @@ static cJSON *build_tool_results(const llm_response_t *resp, const mimi_msg_t *m
         /* Execute tool */
         tool_output[0] = '\0';
         tool_registry_execute(call->name, tool_input, tool_output, tool_output_size);
+        tool_output[tool_output_size - 1] = '\0';
         free(patched_input);
 
-        ESP_LOGI(TAG, "Tool %s result: %d bytes", call->name, (int)strlen(tool_output));
+        size_t output_len = strnlen(tool_output, tool_output_size);
+        ESP_LOGI(TAG, "Tool %s result: %d bytes", call->name, (int)output_len);
 
         /* Build tool_result block */
         cJSON *result_block = cJSON_CreateObject();

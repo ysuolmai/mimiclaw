@@ -2,6 +2,7 @@
 #include "wifi/wifi_manager.h"
 
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include "esp_app_desc.h"
@@ -14,6 +15,32 @@
 #include "esp_timer.h"
 
 static const char *TAG = "tool_system";
+
+static void i64_to_str(int64_t value, char *out, size_t out_size)
+{
+    if (!out || out_size == 0) {
+        return;
+    }
+
+    char tmp[24];
+    size_t pos = 0;
+    bool negative = value < 0;
+    uint64_t n = negative ? (uint64_t)(-(value + 1)) + 1ULL : (uint64_t)value;
+
+    do {
+        tmp[pos++] = (char)('0' + (n % 10));
+        n /= 10;
+    } while (n > 0 && pos < sizeof(tmp));
+
+    size_t off = 0;
+    if (negative && off + 1 < out_size) {
+        out[off++] = '-';
+    }
+    while (pos > 0 && off + 1 < out_size) {
+        out[off++] = tmp[--pos];
+    }
+    out[off] = '\0';
+}
 
 static const char *reset_reason_to_str(esp_reset_reason_t reason)
 {
@@ -55,6 +82,11 @@ esp_err_t tool_system_status_execute(const char *input_json, char *output, size_
 {
     (void)input_json;
 
+    if (!output || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    output[0] = '\0';
+
     const esp_app_desc_t *app = esp_app_get_description();
     esp_chip_info_t chip;
     esp_chip_info(&chip);
@@ -67,11 +99,13 @@ esp_err_t tool_system_status_execute(const char *input_json, char *output, size_
     esp_err_t spiffs_err = esp_spiffs_info(NULL, &spiffs_total, &spiffs_used);
 
     int64_t uptime_s = esp_timer_get_time() / 1000000LL;
+    char uptime_str[24];
+    i64_to_str(uptime_s, uptime_str, sizeof(uptime_str));
     esp_reset_reason_t reset_reason = esp_reset_reason();
 
     size_t off = 0;
     appendf(output, output_size, &off, "System status\n");
-    appendf(output, output_size, &off, "- uptime_s: %" PRId64 "\n", uptime_s);
+    appendf(output, output_size, &off, "- uptime_s: %s\n", uptime_str);
     appendf(output, output_size, &off, "- reset_reason: %s\n", reset_reason_to_str(reset_reason));
     appendf(output, output_size, &off, "- app: %s %s\n", app->project_name, app->version);
     appendf(output, output_size, &off, "- build: %s %s\n", app->date, app->time);
@@ -110,5 +144,6 @@ esp_err_t tool_system_status_execute(const char *input_json, char *output, size_
     }
 
     ESP_LOGI(TAG, "system_status generated");
+    output[output_size - 1] = '\0';
     return ESP_OK;
 }

@@ -61,6 +61,33 @@ static uint64_t make_msg_key(const char *chat_id, int msg_id)
     return (h << 16) ^ (uint64_t)(msg_id & 0xFFFF) ^ ((uint64_t)msg_id << 32);
 }
 
+static void i64_to_str(int64_t value, char *out, size_t out_size)
+{
+    if (!out || out_size == 0) {
+        return;
+    }
+
+    char tmp[24];
+    size_t pos = 0;
+    bool negative = value < 0;
+    uint64_t n = negative ? (uint64_t)(-(value + 1)) + 1ULL : (uint64_t)value;
+
+    do {
+        tmp[pos++] = (char)('0' + (n % 10));
+        n /= 10;
+    } while (n > 0 && pos < sizeof(tmp));
+
+    size_t off = 0;
+    if (negative && off + 1 < out_size) {
+        out[off++] = '-';
+    }
+
+    while (pos > 0 && off + 1 < out_size) {
+        out[off++] = tmp[--pos];
+    }
+    out[off] = '\0';
+}
+
 static bool seen_msg_contains(uint64_t key)
 {
     for (size_t i = 0; i < TG_DEDUP_CACHE_SIZE; i++) {
@@ -257,10 +284,10 @@ static char *tg_api_call(const char *method, const char *post_data)
     return tg_api_call_direct(method, post_data);
 }
 
-static bool tg_response_is_ok(const char *resp, const char **out_desc)
+static bool tg_response_is_ok(const char *resp, char *out_desc, size_t out_desc_size)
 {
-    if (out_desc) {
-        *out_desc = NULL;
+    if (out_desc && out_desc_size > 0) {
+        out_desc[0] = '\0';
     }
     if (!resp) {
         return false;
@@ -270,10 +297,10 @@ static bool tg_response_is_ok(const char *resp, const char **out_desc)
     if (root) {
         cJSON *ok_field = cJSON_GetObjectItem(root, "ok");
         bool ok = cJSON_IsTrue(ok_field);
-        if (!ok && out_desc) {
+        if (!ok && out_desc && out_desc_size > 0) {
             cJSON *desc = cJSON_GetObjectItem(root, "description");
             if (desc && cJSON_IsString(desc)) {
-                *out_desc = desc->valuestring;
+                strlcpy(out_desc, desc->valuestring, out_desc_size);
             }
         }
         cJSON_Delete(root);
@@ -815,15 +842,19 @@ static void process_updates(const char *json_str)
         if (msg_id_val >= 0) {
             uint64_t msg_key = make_msg_key(chat_id_str, msg_id_val);
             if (seen_msg_contains(msg_key)) {
-                ESP_LOGW(TAG, "Drop duplicate message update_id=%" PRId64 " chat=%s message_id=%d",
-                         uid, chat_id_str, msg_id_val);
+                char uid_str[24];
+                i64_to_str(uid, uid_str, sizeof(uid_str));
+                ESP_LOGW(TAG, "Drop duplicate message update_id=%s chat=%s message_id=%d",
+                         uid_str, chat_id_str, msg_id_val);
                 continue;
             }
             seen_msg_insert(msg_key);
         }
 
-        ESP_LOGI(TAG, "Message update_id=%" PRId64 " message_id=%d from chat %s: %.40s...",
-                 uid, msg_id_val, chat_id_str, text->valuestring);
+        char uid_str[24];
+        i64_to_str(uid, uid_str, sizeof(uid_str));
+        ESP_LOGI(TAG, "Message update_id=%s message_id=%d from chat %s: %.40s...",
+                 uid_str, msg_id_val, chat_id_str, text->valuestring);
 
         if (handle_builtin_command(chat_id_str, text->valuestring)) {
             continue;
@@ -856,10 +887,12 @@ static void telegram_poll_task(void *arg)
             continue;
         }
 
+        char offset_str[24];
+        i64_to_str(s_update_offset, offset_str, sizeof(offset_str));
         char params[128];
         snprintf(params, sizeof(params),
-                 "getUpdates?offset=%" PRId64 "&timeout=%d",
-                 s_update_offset, MIMI_TG_POLL_TIMEOUT_S);
+                 "getUpdates?offset=%s&timeout=%d",
+                 offset_str, MIMI_TG_POLL_TIMEOUT_S);
 
         char *resp = tg_api_call(params, NULL);
         if (resp) {
@@ -889,7 +922,9 @@ esp_err_t telegram_bot_init(void)
         if (nvs_get_i64(nvs, TG_OFFSET_NVS_KEY, &offset) == ESP_OK && offset > 0) {
             s_update_offset = offset;
             s_last_saved_offset = offset;
-            ESP_LOGI(TAG, "Loaded Telegram update offset: %" PRId64, s_update_offset);
+            char offset_str[24];
+            i64_to_str(s_update_offset, offset_str, sizeof(offset_str));
+            ESP_LOGI(TAG, "Loaded Telegram update offset: %s", offset_str);
         }
         nvs_close(nvs);
     }
@@ -965,12 +1000,12 @@ esp_err_t telegram_send_message(const char *chat_id, const char *text)
         int sent_ok = 0;
         bool markdown_failed = false;
         if (resp) {
-            const char *desc = NULL;
-            sent_ok = tg_response_is_ok(resp, &desc);
+            char desc[160];
+            sent_ok = tg_response_is_ok(resp, desc, sizeof(desc));
             if (!sent_ok) {
                 markdown_failed = true;
                 ESP_LOGI(TAG, "Markdown rejected by Telegram for %s: %s",
-                         chat_id, desc ? desc : "unknown");
+                         chat_id, desc[0] ? desc : "unknown");
             }
         }
 
@@ -991,10 +1026,10 @@ esp_err_t telegram_send_message(const char *chat_id, const char *text)
                 char *resp2 = tg_api_call("sendMessage", json2);
                 free(json2);
                 if (resp2) {
-                    const char *desc2 = NULL;
-                    sent_ok = tg_response_is_ok(resp2, &desc2);
+                    char desc2[160];
+                    sent_ok = tg_response_is_ok(resp2, desc2, sizeof(desc2));
                     if (!sent_ok) {
-                        ESP_LOGE(TAG, "Plain send failed: %s", desc2 ? desc2 : "unknown");
+                        ESP_LOGE(TAG, "Plain send failed: %s", desc2[0] ? desc2 : "unknown");
                         ESP_LOGE(TAG, "Telegram raw response: %.300s", resp2);
                     }
                     free(resp2);

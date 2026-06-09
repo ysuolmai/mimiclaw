@@ -444,14 +444,25 @@ const char *tool_registry_get_tools_json(void)
 esp_err_t tool_registry_execute(const char *name, const char *input_json,
                                 char *output, size_t output_size)
 {
+    if (output && output_size > 0) {
+        output[0] = '\0';
+    }
+
     for (int i = 0; i < s_tool_count; i++) {
         if (strcmp(s_tools[i].name, name) == 0) {
             ESP_LOGI(TAG, "Executing tool: %s", name);
-            return s_tools[i].execute(input_json, output, output_size);
+            esp_err_t err = s_tools[i].execute(input_json, output, output_size);
+            if (output && output_size > 0) {
+                output[output_size - 1] = '\0';
+            }
+            return err;
         }
     }
 
     ESP_LOGW(TAG, "Unknown tool: %s", name);
-    snprintf(output, output_size, "Error: unknown tool '%s'", name);
+    if (output && output_size > 0) {
+        snprintf(output, output_size, "Error: unknown tool '%s'", name);
+        output[output_size - 1] = '\0';
+    }
     return ESP_ERR_NOT_FOUND;
 }
