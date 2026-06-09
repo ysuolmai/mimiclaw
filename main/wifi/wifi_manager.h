@@ -41,6 +41,17 @@ const char *wifi_manager_get_ip(void);
 esp_err_t wifi_manager_set_credentials(const char *ssid, const char *password);
 
 /**
+ * Request WiFi reconfiguration mode on next boot. Saved WiFi credentials stay
+ * intact so the portal can prefill and reuse them.
+ */
+esp_err_t wifi_manager_request_reconfigure(void);
+
+/**
+ * Consume the one-shot WiFi reconfiguration flag.
+ */
+bool wifi_manager_consume_reconfigure_request(void);
+
+/**
  * Get the event group for WiFi state (WIFI_CONNECTED_BIT / WIFI_FAIL_BIT).
  */
 EventGroupHandle_t wifi_manager_get_event_group(void);

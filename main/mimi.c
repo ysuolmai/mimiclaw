@@ -10,6 +10,7 @@
 #include "nvs_flash.h"
 
 #include "mimi_config.h"
+#include "board/boot_button.h"
 #include "bus/message_bus.h"
 #include "wifi/wifi_manager.h"
 #include "channels/telegram/telegram_bot.h"
@@ -151,6 +152,14 @@ void app_main(void)
     /* Start Serial CLI first (works without WiFi) */
     ESP_ERROR_CHECK(serial_cli_init());
 
+    if (wifi_manager_consume_reconfigure_request()) {
+        ESP_LOGW(TAG, "BOOT long press requested AP-only WiFi onboarding mode");
+        wifi_onboard_start(WIFI_ONBOARD_MODE_CAPTIVE);  /* blocks, restarts on success */
+        return;  /* unreachable */
+    }
+
+    ESP_ERROR_CHECK(boot_button_init());
+
     /* Start WiFi */
     esp_err_t wifi_err = wifi_manager_start();
     bool wifi_ok = false;
@@ -174,8 +183,8 @@ void app_main(void)
         return;  /* unreachable */
     }
 
-    if (wifi_onboard_start(WIFI_ONBOARD_MODE_ADMIN) != ESP_OK) {
-        ESP_LOGW(TAG, "Local admin portal unavailable; continuing without config hotspot");
+    if (wifi_onboard_start(WIFI_ONBOARD_MODE_STA_ADMIN) != ESP_OK) {
+        ESP_LOGW(TAG, "Local admin portal unavailable on STA IP; continuing");
     }
 
     {

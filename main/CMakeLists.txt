@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "mimi.c"
+        "board/boot_button.c"
         "bus/message_bus.c"
         "wifi/wifi_manager.c"
         "channels/telegram/telegram_bot.c"

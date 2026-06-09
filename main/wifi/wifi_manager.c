@@ -166,6 +166,48 @@ esp_err_t wifi_manager_set_credentials(const char *ssid, const char *password)
     return ESP_OK;
 }
 
+esp_err_t wifi_manager_request_reconfigure(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(MIMI_NVS_WIFI, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed opening WiFi NVS: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_ERROR_CHECK(nvs_set_u8(nvs, MIMI_NVS_KEY_FORCE_ONBOARD, 1));
+    err = nvs_commit(nvs);
+    nvs_close(nvs);
+
+    if (err == ESP_OK) {
+        ESP_LOGW(TAG, "WiFi AP reconfiguration mode requested for next boot");
+    } else {
+        ESP_LOGE(TAG, "Failed saving WiFi reconfiguration request: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+bool wifi_manager_consume_reconfigure_request(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(MIMI_NVS_WIFI, NVS_READWRITE, &nvs) != ESP_OK) {
+        return false;
+    }
+
+    uint8_t flag = 0;
+    esp_err_t err = nvs_get_u8(nvs, MIMI_NVS_KEY_FORCE_ONBOARD, &flag);
+    if (err == ESP_OK && flag) {
+        nvs_erase_key(nvs, MIMI_NVS_KEY_FORCE_ONBOARD);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+        ESP_LOGW(TAG, "Consuming one-shot WiFi AP reconfiguration request");
+        return true;
+    }
+
+    nvs_close(nvs);
+    return false;
+}
+
 EventGroupHandle_t wifi_manager_get_event_group(void)
 {
     return s_wifi_event_group;

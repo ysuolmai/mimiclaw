@@ -86,6 +86,22 @@
 #define MIMI_WIFI_RETRY_BASE_MS      1000
 #define MIMI_WIFI_RETRY_MAX_MS       30000
 
+/* BOOT button: long press enters WiFi reconfiguration mode.
+ * ESP32-S3 Super Mini uses GPIO0 for BOOT. ESP32-C3 Super Mini commonly uses
+ * GPIO9; this keeps the lite build compiling even though S3 is the primary
+ * hardware profile.
+ */
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define MIMI_BOOT_BUTTON_GPIO        9
+#else
+#define MIMI_BOOT_BUTTON_GPIO        0
+#endif
+#define MIMI_BOOT_BUTTON_POLL_MS     50
+#define MIMI_BOOT_BUTTON_LONG_PRESS_MS 5000
+#define MIMI_BOOT_BUTTON_STACK       (3 * 1024)
+#define MIMI_BOOT_BUTTON_PRIO        4
+#define MIMI_BOOT_BUTTON_CORE        0
+
 /* Telegram Bot */
 #define MIMI_TG_POLL_TIMEOUT_S       30
 #define MIMI_TG_MAX_MSG_LEN          4096
@@ -247,6 +263,7 @@
 #define MIMI_NVS_KEY_PROXY_TYPE      "proxy_type"
 #define MIMI_NVS_KEY_VOICE_STREAM_URL "stream_url"
 #define MIMI_NVS_KEY_VOICE_CODEC     "codec"
+#define MIMI_NVS_KEY_FORCE_ONBOARD   "force_onboard"
 
 /* WiFi Onboarding (Captive Portal) */
 #define MIMI_ONBOARD_AP_PREFIX    "MimiClaw-"

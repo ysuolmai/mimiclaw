@@ -40,7 +40,9 @@ Typical uses:
 
 ## Updating Settings Later
 
-If the firmware keeps the admin AP online after normal Wi-Fi connection, you can reconnect to `MimiClaw-XXXX` later and open `http://192.168.4.1` again.
+On the ESP32-S3 Super Mini build, the admin AP is turned off after normal Wi-Fi connection. Use the STA IP printed in serial logs, for example `http://192.168.1.123`, to open the same admin page from your LAN.
+
+To re-open the local `MimiClaw-XXXX` configuration hotspot, hold BOOT for 5 seconds. The firmware keeps saved Wi-Fi credentials unchanged, stores a one-shot force-onboarding request, skips STA connection on the next boot, and starts captive portal mode.
 
 The page should prefill the currently effective configuration so you can edit only the fields you want to change.
 
@@ -75,7 +77,7 @@ mimi> config_reset
 ### No `MimiClaw-XXXX` hotspot appears
 
 - verify that the running firmware actually includes the onboarding portal
-- if the device already connects successfully and does not keep the admin AP online, clear Wi-Fi config and reboot
+- if the device already connects successfully, hold BOOT for 5 seconds to enter reconfiguration mode
 - confirm the board has finished booting before scanning for Wi-Fi
 
 ### The page still shows old values

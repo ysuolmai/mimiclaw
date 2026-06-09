@@ -1025,15 +1025,17 @@ esp_err_t wifi_onboard_start(wifi_onboard_mode_t mode)
     ESP_LOGI(TAG, "========================================");
 
     bool captive = (mode == WIFI_ONBOARD_MODE_CAPTIVE);
+    bool use_softap = (mode != WIFI_ONBOARD_MODE_STA_ADMIN);
     if (captive) {
         /* Stop STA retries before starting captive portal. */
         wifi_manager_set_reconnect_enabled(false);
         wifi_manager_stop();
     }
 
-    /* Start soft AP */
-    esp_err_t err = start_softap(!captive);
-    if (err != ESP_OK) return err;
+    if (use_softap) {
+        esp_err_t err = start_softap(!captive);
+        if (err != ESP_OK) return err;
+    }
 
     if (captive) {
         /* Start DNS hijack only for true captive portal mode. */
@@ -1045,10 +1047,19 @@ esp_err_t wifi_onboard_start(wifi_onboard_mode_t mode)
     httpd_handle_t server = start_http_server(captive);
     if (!server) return ESP_FAIL;
 
-    ESP_LOGI(TAG, "Connect to MimiClaw-XXXX WiFi, then open http://192.168.4.1");
+    if (use_softap) {
+        ESP_LOGI(TAG, "Connect to MimiClaw-XXXX WiFi, then open http://192.168.4.1");
+    } else {
+        ESP_LOGI(TAG, "Admin portal is available on STA IP: http://%s",
+                 wifi_manager_get_ip());
+    }
 
     if (!captive) {
-        ESP_LOGI(TAG, "Local admin portal stays available while STA is connected");
+        if (use_softap) {
+            ESP_LOGI(TAG, "Local admin portal stays available while STA is connected");
+        } else {
+            ESP_LOGI(TAG, "Soft AP is off while STA WiFi is connected");
+        }
         return ESP_OK;
     }
 

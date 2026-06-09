@@ -38,7 +38,7 @@ static const char ONBOARD_HTML[] =
 "@media(max-width:520px){body{padding:12px}.row{grid-template-columns:1fr}.btn{flex:1 1 auto}}"
 "</style></head><body>"
 "<h1>MimiClaw Admin</h1>"
-"<p class='sub'>Local portal at 192.168.4.1</p>"
+"<p class='sub'>Local admin portal via AP or STA IP</p>"
 
 "<div class='card' id='sec-system'>"
 "<div class='card-hdr' onclick='toggle(this)'>System Console</div>"

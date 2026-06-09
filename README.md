@@ -95,7 +95,11 @@ Use the Web Admin page to configure:
 
 Click `Save Config & Restart`. Values are stored in NVS and override build-time defaults.
 
-When the device is already connected to WiFi, the same admin portal remains available from the local AP while the firmware is running.
+Current Super Mini behavior:
+
+- after STA WiFi connects successfully, the `MimiClaw-XXXX` AP is not kept online
+- Web Admin is still served on the device STA IP shown in serial logs
+- hold BOOT for 5 seconds to skip STA connection and reboot into the `MimiClaw-XXXX` reconfiguration portal; saved SSID/password are kept and prefilled
 
 ### 3. Configure LLM API
 
