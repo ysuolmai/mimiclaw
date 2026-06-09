@@ -102,6 +102,20 @@
 #define MIMI_BOOT_BUTTON_PRIO        4
 #define MIMI_BOOT_BUTTON_CORE        0
 
+/* ESP32-S3 Super Mini onboard RGB LED.
+ * The common board uses a WS2812/NeoPixel DIN on GPIO48. Keep it quiet during
+ * normal operation; use a slow blink only while the AP onboarding portal is up.
+ */
+#ifndef MIMI_ENABLE_STATUS_LED
+#define MIMI_ENABLE_STATUS_LED       (!MIMI_TARGET_C3_LITE)
+#endif
+#define MIMI_STATUS_LED_GPIO         48
+#define MIMI_STATUS_LED_RMT_RES_HZ   (10 * 1000 * 1000)
+#define MIMI_STATUS_LED_BLINK_MS     700
+#define MIMI_STATUS_LED_STACK        (3 * 1024)
+#define MIMI_STATUS_LED_PRIO         3
+#define MIMI_STATUS_LED_CORE         0
+
 /* Telegram Bot */
 #define MIMI_TG_POLL_TIMEOUT_S       30
 #define MIMI_TG_MAX_MSG_LEN          4096

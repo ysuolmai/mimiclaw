@@ -11,6 +11,7 @@
 
 #include "mimi_config.h"
 #include "board/boot_button.h"
+#include "board/status_led.h"
 #include "bus/message_bus.h"
 #include "wifi/wifi_manager.h"
 #include "channels/telegram/telegram_bot.h"
@@ -125,6 +126,11 @@ void app_main(void)
     ESP_LOGI(TAG, "PSRAM free:    %d bytes",
              (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
+    esp_err_t led_err = status_led_init();
+    if (led_err != ESP_OK) {
+        ESP_LOGW(TAG, "Status LED unavailable: %s", esp_err_to_name(led_err));
+    }
+
     /* Phase 1: Core infrastructure */
     ESP_ERROR_CHECK(init_nvs());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -154,6 +160,7 @@ void app_main(void)
 
     if (wifi_manager_consume_reconfigure_request()) {
         ESP_LOGW(TAG, "BOOT long press requested AP-only WiFi onboarding mode");
+        status_led_set_mode(STATUS_LED_MODE_ONBOARDING);
         wifi_onboard_start(WIFI_ONBOARD_MODE_CAPTIVE);  /* blocks, restarts on success */
         return;  /* unreachable */
     }
@@ -179,10 +186,12 @@ void app_main(void)
 
     if (!wifi_ok) {
         ESP_LOGW(TAG, "Entering WiFi onboarding mode...");
+        status_led_set_mode(STATUS_LED_MODE_ONBOARDING);
         wifi_onboard_start(WIFI_ONBOARD_MODE_CAPTIVE);  /* blocks, restarts on success */
         return;  /* unreachable */
     }
 
+    status_led_set_mode(STATUS_LED_MODE_OFF);
     if (wifi_onboard_start(WIFI_ONBOARD_MODE_STA_ADMIN) != ESP_OK) {
         ESP_LOGW(TAG, "Local admin portal unavailable on STA IP; continuing");
     }
