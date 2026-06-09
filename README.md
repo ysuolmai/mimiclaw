@@ -100,7 +100,7 @@ Current Super Mini behavior:
 - after STA WiFi connects successfully, the `MimiClaw-XXXX` AP is not kept online
 - Web Admin is still served on the device STA IP shown in serial logs
 - hold BOOT for 5 seconds to skip STA connection and reboot into the `MimiClaw-XXXX` reconfiguration portal; saved SSID/password are kept and prefilled
-- the onboard RGB LED on GPIO48 stays off during normal operation and slowly blinks only while the AP onboarding portal is active
+- the onboard status LED stays off during normal operation and slowly blinks only while the AP onboarding portal is active; defaults are WS2812/RGB on GPIO48 for ESP32-S3 Super Mini and active-low GPIO on GPIO8 for ESP32-C3 Super Mini
 
 ### 3. Configure LLM API
 

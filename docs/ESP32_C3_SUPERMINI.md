@@ -12,6 +12,8 @@ It is a constrained runtime profile, not the full ESP32-S3 build.
 - Small persistent memory and session files
 - File, memory, cron, heartbeat, GPIO, and system status tools
 - SPIFFS image as a separate artifact
+- Onboard status LED on GPIO8: normally off, slow blink while the AP
+  onboarding portal is active
 
 ## Disabled by default
 
@@ -26,6 +28,9 @@ It is a constrained runtime profile, not the full ESP32-S3 build.
 - No voice input or output pipeline is implemented.
 - No Telegram voice download, ASR, TTS, I2S speaker, or microphone path is present.
 - The LLM path is memory constrained. Prefer smaller models, short answers, and short history.
+- The default C3 LED driver is a normal active-low GPIO LED. If your board uses
+  a WS2812/RGB LED or a different pin, override `MIMI_STATUS_LED_TYPE`,
+  `MIMI_STATUS_LED_GPIO`, or `MIMI_ENABLE_STATUS_LED` in `main/mimi_secrets.h`.
 
 ## Flash layout
 

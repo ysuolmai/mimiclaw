@@ -4,6 +4,12 @@
 
 #include "sdkconfig.h"
 
+/* Status LED driver types. Define these before mimi_secrets.h so local builds
+ * can override MIMI_STATUS_LED_TYPE with the named constants below.
+ */
+#define MIMI_STATUS_LED_TYPE_GPIO     1
+#define MIMI_STATUS_LED_TYPE_WS2812   2
+
 /* Build-time secrets (highest priority, override NVS) */
 #if __has_include("mimi_secrets.h")
 #include "mimi_secrets.h"
@@ -102,14 +108,35 @@
 #define MIMI_BOOT_BUTTON_PRIO        4
 #define MIMI_BOOT_BUTTON_CORE        0
 
-/* ESP32-S3 Super Mini onboard RGB LED.
- * The common board uses a WS2812/NeoPixel DIN on GPIO48. Keep it quiet during
- * normal operation; use a slow blink only while the AP onboarding portal is up.
+/* Super Mini onboard status LED.
+ * Common ESP32-S3 boards use WS2812/NeoPixel DIN on GPIO48; common ESP32-C3
+ * boards use an active-low GPIO LED on GPIO8. Keep it quiet during normal
+ * operation; use a slow blink only while the AP onboarding portal is up.
  */
 #ifndef MIMI_ENABLE_STATUS_LED
-#define MIMI_ENABLE_STATUS_LED       (!MIMI_TARGET_C3_LITE)
+#define MIMI_ENABLE_STATUS_LED       1
 #endif
+#ifndef MIMI_STATUS_LED_GPIO
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define MIMI_STATUS_LED_GPIO         8
+#else
 #define MIMI_STATUS_LED_GPIO         48
+#endif
+#endif
+#ifndef MIMI_STATUS_LED_TYPE
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define MIMI_STATUS_LED_TYPE         MIMI_STATUS_LED_TYPE_GPIO
+#else
+#define MIMI_STATUS_LED_TYPE         MIMI_STATUS_LED_TYPE_WS2812
+#endif
+#endif
+#ifndef MIMI_STATUS_LED_ACTIVE_LOW
+#if MIMI_STATUS_LED_TYPE == MIMI_STATUS_LED_TYPE_GPIO
+#define MIMI_STATUS_LED_ACTIVE_LOW   1
+#else
+#define MIMI_STATUS_LED_ACTIVE_LOW   0
+#endif
+#endif
 #define MIMI_STATUS_LED_RMT_RES_HZ   (10 * 1000 * 1000)
 #define MIMI_STATUS_LED_BLINK_MS     700
 #define MIMI_STATUS_LED_STACK        (3 * 1024)

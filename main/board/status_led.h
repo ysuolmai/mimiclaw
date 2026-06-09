@@ -8,8 +8,8 @@ typedef enum {
 } status_led_mode_t;
 
 /**
- * Initialize the board status LED. On ESP32-S3 Super Mini this drives the
- * onboard WS2812/RGB LED on GPIO48 and turns it off immediately.
+ * Initialize the board status LED. On Super Mini boards this drives the
+ * onboard LED and turns it off immediately.
  */
 esp_err_t status_led_init(void);
 
