@@ -754,6 +754,25 @@ static void nvs_sync_field(cJSON *root, const char *json_key,
     }
 }
 
+/*
+ * Sync a secret field submitted from Web Admin.
+ * Empty secret inputs are treated as "keep existing" so a partially loaded page
+ * cannot accidentally erase API keys or bot tokens.
+ */
+static void nvs_sync_secret_field(cJSON *root, const char *json_key,
+                                  const char *ns, const char *nvs_key)
+{
+    cJSON *item = cJSON_GetObjectItem(root, json_key);
+    if (!item || !cJSON_IsString(item)) return;
+
+    if (item->valuestring[0] == '\0') {
+        ESP_LOGI(TAG, "Kept %s/%s (empty secret field ignored)", ns, nvs_key);
+        return;
+    }
+
+    nvs_sync_field(root, json_key, ns, nvs_key);
+}
+
 static void nvs_sync_u16_field(cJSON *root, const char *json_key,
                                const char *ns, const char *nvs_key)
 {
@@ -818,20 +837,20 @@ static esp_err_t http_post_save(httpd_req_t *req)
 
     /* WiFi (required) */
     nvs_sync_field(root, "ssid",     MIMI_NVS_WIFI,   MIMI_NVS_KEY_SSID);
-    nvs_sync_field(root, "password", MIMI_NVS_WIFI,   MIMI_NVS_KEY_PASS);
+    nvs_sync_secret_field(root, "password", MIMI_NVS_WIFI,   MIMI_NVS_KEY_PASS);
 
     /* LLM */
-    nvs_sync_field(root, "api_key",  MIMI_NVS_LLM,    MIMI_NVS_KEY_API_KEY);
+    nvs_sync_secret_field(root, "api_key",  MIMI_NVS_LLM,    MIMI_NVS_KEY_API_KEY);
     nvs_sync_field(root, "model",    MIMI_NVS_LLM,    MIMI_NVS_KEY_MODEL);
     nvs_sync_field(root, "provider", MIMI_NVS_LLM,    MIMI_NVS_KEY_PROVIDER);
     nvs_sync_field(root, "base_url", MIMI_NVS_LLM,    MIMI_NVS_KEY_LLM_BASE_URL);
 
     /* Telegram */
-    nvs_sync_field(root, "tg_token", MIMI_NVS_TG,     MIMI_NVS_KEY_TG_TOKEN);
+    nvs_sync_secret_field(root, "tg_token", MIMI_NVS_TG,     MIMI_NVS_KEY_TG_TOKEN);
 
     /* Feishu */
     nvs_sync_field(root, "feishu_app_id",     MIMI_NVS_FEISHU, MIMI_NVS_KEY_FEISHU_APP_ID);
-    nvs_sync_field(root, "feishu_app_secret", MIMI_NVS_FEISHU, MIMI_NVS_KEY_FEISHU_APP_SECRET);
+    nvs_sync_secret_field(root, "feishu_app_secret", MIMI_NVS_FEISHU, MIMI_NVS_KEY_FEISHU_APP_SECRET);
 
     /* Proxy */
     nvs_sync_field(root, "proxy_host", MIMI_NVS_PROXY, MIMI_NVS_KEY_PROXY_HOST);
@@ -839,8 +858,8 @@ static esp_err_t http_post_save(httpd_req_t *req)
     nvs_sync_field(root, "proxy_type", MIMI_NVS_PROXY, MIMI_NVS_KEY_PROXY_TYPE);
 
     /* Search */
-    nvs_sync_field(root, "search_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_API_KEY);
-    nvs_sync_field(root, "tavily_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_TAVILY_KEY);
+    nvs_sync_secret_field(root, "search_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_API_KEY);
+    nvs_sync_secret_field(root, "tavily_key", MIMI_NVS_SEARCH, MIMI_NVS_KEY_TAVILY_KEY);
 
     /* Voice stream */
     nvs_sync_field(root, "voice_stream_url", MIMI_NVS_VOICE, MIMI_NVS_KEY_VOICE_STREAM_URL);

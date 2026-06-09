@@ -10,8 +10,7 @@
 #include <stdint.h>
 
 #if MIMI_ENABLE_STATUS_LED && (MIMI_STATUS_LED_TYPE == MIMI_STATUS_LED_TYPE_WS2812)
-#include "driver/rmt_encoder.h"
-#include "driver/rmt_tx.h"
+#include "led_strip.h"
 #elif MIMI_ENABLE_STATUS_LED && (MIMI_STATUS_LED_TYPE == MIMI_STATUS_LED_TYPE_GPIO)
 #include "driver/gpio.h"
 #endif
@@ -23,28 +22,22 @@ static volatile status_led_mode_t s_mode = STATUS_LED_MODE_OFF;
 static TaskHandle_t s_task = NULL;
 
 #if MIMI_ENABLE_STATUS_LED && (MIMI_STATUS_LED_TYPE == MIMI_STATUS_LED_TYPE_WS2812)
-static rmt_channel_handle_t s_channel = NULL;
-static rmt_encoder_handle_t s_encoder = NULL;
+static led_strip_handle_t s_strip = NULL;
 
 static esp_err_t status_led_write_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
-    if (!s_channel || !s_encoder) {
+    if (!s_strip) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    uint8_t grb[3] = { green, red, blue };
-    rmt_transmit_config_t tx_config = {
-        .loop_count = 0,
-        .flags.eot_level = 0,
-    };
-
-    esp_err_t err = rmt_transmit(s_channel, s_encoder, grb, sizeof(grb), &tx_config);
-    if (err != ESP_OK) {
-        return err;
+    if (red == 0 && green == 0 && blue == 0) {
+        return led_strip_clear(s_strip);
     }
 
-    err = rmt_tx_wait_all_done(s_channel, pdMS_TO_TICKS(50));
-    vTaskDelay(pdMS_TO_TICKS(1));
+    esp_err_t err = led_strip_set_pixel(s_strip, 0, red, green, blue);
+    if (err == ESP_OK) {
+        err = led_strip_refresh(s_strip);
+    }
     return err;
 }
 #endif
@@ -68,6 +61,7 @@ static void status_led_task(void *arg)
 {
     (void)arg;
     bool lit = false;
+    status_led_mode_t last_mode = STATUS_LED_MODE_OFF;
 
     while (1) {
         status_led_mode_t mode = s_mode;
@@ -75,10 +69,14 @@ static void status_led_task(void *arg)
         if (mode == STATUS_LED_MODE_ONBOARDING) {
             lit = !lit;
             status_led_write_lit(lit);
+            last_mode = mode;
             vTaskDelay(pdMS_TO_TICKS(MIMI_STATUS_LED_BLINK_MS));
         } else {
-            lit = false;
-            status_led_write_lit(false);
+            if (last_mode != STATUS_LED_MODE_OFF || lit) {
+                lit = false;
+                status_led_write_lit(false);
+            }
+            last_mode = STATUS_LED_MODE_OFF;
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
@@ -115,49 +113,24 @@ esp_err_t status_led_init(void)
     s_initialized = true;
     return ESP_OK;
 #elif MIMI_STATUS_LED_TYPE == MIMI_STATUS_LED_TYPE_WS2812
-    rmt_tx_channel_config_t tx_chan_config = {
-        .gpio_num = MIMI_STATUS_LED_GPIO,
-        .clk_src = RMT_CLK_SRC_DEFAULT,
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = MIMI_STATUS_LED_GPIO,
+        .max_leds = 1,
+        .led_model = LED_MODEL_WS2812,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+    };
+    led_strip_rmt_config_t rmt_config = {
         .resolution_hz = MIMI_STATUS_LED_RMT_RES_HZ,
-        .mem_block_symbols = 64,
-        .trans_queue_depth = 4,
     };
 
-    esp_err_t err = rmt_new_tx_channel(&tx_chan_config, &s_channel);
+    esp_err_t err = led_strip_new_rmt_device(&strip_config, &rmt_config, &s_strip);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to create LED RMT channel on GPIO%d: %s",
+        ESP_LOGW(TAG, "Failed to create LED strip on GPIO%d: %s",
                  MIMI_STATUS_LED_GPIO, esp_err_to_name(err));
         return err;
     }
 
-    rmt_bytes_encoder_config_t bytes_encoder_config = {
-        .bit0 = {
-            .level0 = 1,
-            .duration0 = 3,
-            .level1 = 0,
-            .duration1 = 9,
-        },
-        .bit1 = {
-            .level0 = 1,
-            .duration0 = 9,
-            .level1 = 0,
-            .duration1 = 3,
-        },
-        .flags.msb_first = 1,
-    };
-    err = rmt_new_bytes_encoder(&bytes_encoder_config, &s_encoder);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to create LED RMT encoder: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    err = rmt_enable(s_channel);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to enable LED RMT channel: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    return status_led_start_task("ws2812");
+    return status_led_start_task("led_strip ws2812");
 #elif MIMI_STATUS_LED_TYPE == MIMI_STATUS_LED_TYPE_GPIO
     gpio_config_t io_conf = {
         .pin_bit_mask = 1ULL << MIMI_STATUS_LED_GPIO,
@@ -185,10 +158,4 @@ esp_err_t status_led_init(void)
 void status_led_set_mode(status_led_mode_t mode)
 {
     s_mode = mode;
-
-#if MIMI_ENABLE_STATUS_LED
-    if (s_initialized && mode == STATUS_LED_MODE_OFF) {
-        status_led_write_lit(false);
-    }
-#endif
 }
