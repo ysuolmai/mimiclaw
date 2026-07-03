@@ -1,3 +1,7 @@
+# 高质量<付费>中转站
+
+https://sc.350303.xyz/register?aff=C8X8NEL4BXX6
+
 # MimiClaw: Pocket AI Assistant on a $5 Chip
 
 <p align="center">
